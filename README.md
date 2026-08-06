@@ -10,9 +10,10 @@ SyncScribe AI is a 100% serverless, open-source Chrome Extension (Manifest V3) t
 
 * 🟢 **Zero-Backend & 100% Free:** No `npm start`, localhost servers, or backend hosting required. Everything runs inside your browser.
 * 🎙️ **Universal DOM Scraper:** Automatically captures speaker names, timestamps, and closed captions from Google Meet, Zoom Web, and MS Teams.
-* 🤖 **OpenRouter AI Integration:** Generates executive summaries using top free models (`Meta Llama 3.3 70B`, `Google Gemini 2.0 Flash Lite`, `DeepSeek R1`, `Qwen 2.5 72B`).
-* 💬 **Instant WhatsApp Web Relay:** Pre-fills generated summaries formatted with WhatsApp bolding (`*header*`), emojis (📌, 🎯, ⚡, 👥), and action items directly into your WhatsApp Web chat box.
-* 📁 **Transcript File Upload Support:** Upload external `.txt`, `.vtt`, `.srt`, or `.json` transcript files directly into the extension to generate AI summaries and relay to WhatsApp Web instantly.
+* 🤖 **OpenRouter AI Integration:** Generates executive summaries using top free models (`Meta Llama 3.3 70B`, `Google Gemini 2.0 Flash Lite`, `DeepSeek R1`, `Qwen 2.5 72B`, `Mistral Small 24B`).
+* ✨ **Auto-Detect Persona & Meta-Prompting:** Automatically runs a 2-stage analysis pass over transcripts to dynamically detect meeting titles, participant roles (e.g. Software Engineers vs. Clinical Reviewers), operational rules, and key metrics.
+* 💬 **Multi-Platform Dispatch Relay:** Instant dispatch to **WhatsApp Web** (chats or group picker), **Slack** (via Webhook or Web), and **MS Teams** (via Webhook or Web).
+* 📁 **Transcript File Upload Support:** Upload external `.txt`, `.vtt`, `.srt`, or `.json` transcript files directly into the extension to generate AI summaries instantly.
 * 📄 **Multi-Format Document Exporter:** One-click exports for `.txt` plain text transcripts and formatted printable `.pdf` meeting reports.
 * 🎨 **Ultra-Sleek Glassmorphism Dashboard:** Dark-mode popup UI with real-time sentence counter, live status indicators, tab navigation, and settings panel.
 

@@ -18,12 +18,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const apiKeyInput = document.getElementById('setting-apikey');
   const modelSelect = document.getElementById('setting-model');
   const systemPromptInput = document.getElementById('setting-systemprompt');
+  const autoMetaPromptCheckbox = document.getElementById('setting-auto-metaprompt');
   const phoneInput = document.getElementById('setting-phone');
+  const slackInput = document.getElementById('setting-slack');
+  const teamsInput = document.getElementById('setting-teams');
   const saveSettingsBtn = document.getElementById('btn-save-settings');
 
   // Action Buttons
   const toggleRecordingBtn = document.getElementById('btn-toggle-recording');
   const summarizeWhatsappBtn = document.getElementById('btn-summarize-whatsapp');
+  const summarizeSlackBtn = document.getElementById('btn-summarize-slack');
+  const summarizeTeamsBtn = document.getElementById('btn-summarize-teams');
   const exportTxtBtn = document.getElementById('btn-export-txt');
   const exportPdfBtn = document.getElementById('btn-export-pdf');
   const clearTranscriptBtn = document.getElementById('btn-clear-transcript');
@@ -71,7 +76,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (s.openRouterApiKey) apiKeyInput.value = s.openRouterApiKey;
       if (s.selectedModel) modelSelect.value = s.selectedModel;
       if (s.systemPrompt) systemPromptInput.value = s.systemPrompt;
+      if (s.useAutoMetaPrompt !== undefined) autoMetaPromptCheckbox.checked = s.useAutoMetaPrompt;
       if (s.targetPhone) phoneInput.value = s.targetPhone;
+      if (s.slackWebhookUrl) slackInput.value = s.slackWebhookUrl;
+      if (s.teamsWebhookUrl) teamsInput.value = s.teamsWebhookUrl;
     }
   }
 
@@ -82,7 +90,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       openRouterApiKey: apiKeyInput.value.trim(),
       selectedModel: modelVal,
       systemPrompt: systemPromptInput.value.trim(),
-      targetPhone: phoneInput.value.trim()
+      useAutoMetaPrompt: autoMetaPromptCheckbox.checked,
+      targetPhone: phoneInput.value.trim(),
+      slackWebhookUrl: slackInput.value.trim(),
+      teamsWebhookUrl: teamsInput.value.trim()
     };
     await chrome.storage.local.set({ syncscribe_settings: settings });
     showToast('Preferences saved successfully!');
@@ -166,48 +177,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Action Button: Summarize & WhatsApp
-  summarizeWhatsappBtn.addEventListener('click', async () => {
+  // Helper to generate summary
+  async function generateSummary() {
     if (currentCaptions.length === 0) {
-      showToast('No transcript available to summarize!', true);
-      return;
+      throw new Error('No transcript available to summarize!');
     }
 
-    // UI Loading state
-    summarizeWhatsappBtn.disabled = true;
-    summarizeWhatsappBtn.innerHTML = `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-        <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
-        <path d="M12 2a10 10 0 0 1 10 10"></path>
-      </svg>
-      Generating AI Summary...
-    `;
+    const aiResponse = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: 'GENERATE_AI_SUMMARY',
+        customApiKey: apiKeyInput.value.trim(),
+        customModel: modelSelect.value,
+        customSystemPrompt: systemPromptInput.value.trim(),
+        useAutoMetaPrompt: autoMetaPromptCheckbox.checked
+      }, resolve);
+    });
 
+    if (!aiResponse || !aiResponse.success) {
+      throw new Error(aiResponse?.error || 'Failed to generate AI summary.');
+    }
+
+    summaryContainer.innerText = aiResponse.summary;
+    document.querySelector('[data-tab="tab-summary"]').click();
+    return aiResponse.summary;
+  }
+
+  // Action Button: Summarize & WhatsApp
+  summarizeWhatsappBtn.addEventListener('click', async () => {
     try {
-      // 1. Trigger OpenRouter AI generation
-      const aiResponse = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({
-          action: 'GENERATE_AI_SUMMARY',
-          customApiKey: apiKeyInput.value.trim(),
-          customModel: modelSelect.value,
-          customSystemPrompt: systemPromptInput.value.trim()
-        }, resolve);
-      });
-
-      if (!aiResponse || !aiResponse.success) {
-        throw new Error(aiResponse?.error || 'Failed to generate AI summary.');
-      }
-
-      const summaryText = aiResponse.summary;
-
-      // Update AI Summary tab view
-      summaryContainer.innerText = summaryText;
-      
-      // Switch tab to summary tab
-      document.querySelector('[data-tab="tab-summary"]').click();
-
-      // 2. Relay directly to WhatsApp Web
-      showToast('Opening WhatsApp Web tab...');
+      summarizeWhatsappBtn.disabled = true;
+      summarizeWhatsappBtn.innerHTML = `Generating AI Summary...`;
+      const summaryText = await generateSummary();
+      showToast('Opening WhatsApp Web...');
       await new Promise((resolve) => {
         chrome.runtime.sendMessage({
           action: 'SEND_TO_WHATSAPP',
@@ -215,7 +216,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           phone: phoneInput.value.trim()
         }, resolve);
       });
-
     } catch (err) {
       showToast(err.message, true);
     } finally {
@@ -226,6 +226,60 @@ document.addEventListener('DOMContentLoaded', async () => {
         </svg>
         Summarize & Send to WhatsApp
       `;
+    }
+  });
+
+  // Action Button: Send to Slack
+  summarizeSlackBtn.addEventListener('click', async () => {
+    try {
+      summarizeSlackBtn.disabled = true;
+      summarizeSlackBtn.innerHTML = `Generating...`;
+      const summaryText = await generateSummary();
+      showToast('Relaying to Slack...');
+      const res = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action: 'SEND_TO_SLACK',
+          text: summaryText,
+          slackWebhookUrl: slackInput.value.trim()
+        }, resolve);
+      });
+      if (res && res.success) {
+        showToast(res.method === 'webhook' ? 'Posted directly to Slack Webhook!' : 'Opening Slack Web...');
+      } else {
+        throw new Error(res?.error || 'Failed to send to Slack');
+      }
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      summarizeSlackBtn.disabled = false;
+      summarizeSlackBtn.innerHTML = `Send to Slack`;
+    }
+  });
+
+  // Action Button: Send to MS Teams
+  summarizeTeamsBtn.addEventListener('click', async () => {
+    try {
+      summarizeTeamsBtn.disabled = true;
+      summarizeTeamsBtn.innerHTML = `Generating...`;
+      const summaryText = await generateSummary();
+      showToast('Relaying to MS Teams...');
+      const res = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action: 'SEND_TO_TEAMS',
+          text: summaryText,
+          teamsWebhookUrl: teamsInput.value.trim()
+        }, resolve);
+      });
+      if (res && res.success) {
+        showToast(res.method === 'webhook' ? 'Posted directly to MS Teams Webhook!' : 'Opening MS Teams Web...');
+      } else {
+        throw new Error(res?.error || 'Failed to send to MS Teams');
+      }
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      summarizeTeamsBtn.disabled = false;
+      summarizeTeamsBtn.innerHTML = `Send to Teams`;
     }
   });
 
