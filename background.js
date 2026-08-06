@@ -27,7 +27,7 @@ const DEFAULT_SETTINGS = {
   teamsWebhookUrl: ''
 };
 
-// Initialize Storage on install
+// Initialize Storage & SidePanel on install
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get(['syncscribe_captions', 'syncscribe_settings'], (result) => {
     if (!result.syncscribe_captions) {
@@ -37,6 +37,10 @@ chrome.runtime.onInstalled.addListener(() => {
       chrome.storage.local.set({ syncscribe_settings: DEFAULT_SETTINGS });
     }
   });
+
+  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  }
 });
 
 // Helper to get all stored captions

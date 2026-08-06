@@ -82,34 +82,48 @@
     }
   }
 
-  // Handle caption additions
+  // Handle caption additions with sentence smoothing & deduplication
   function processCaptionEntry(speaker, text) {
     if (!text || text.trim() === '') return;
     const cleanText = text.trim();
 
-    // Prevent duplicate adjacent logs
     if (cleanText === lastCapturedText) return;
-    lastCapturedText = cleanText;
 
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const entry = {
-      id: Date.now() + Math.random().toString(36).substr(2, 4),
-      platform: activePlatform,
-      speaker: speaker || 'Speaker',
-      text: cleanText,
-      timestamp: timestamp,
-      rawTime: Date.now()
-    };
 
-    capturedCount++;
-    updateOverlayCount(capturedCount);
+    // Read storage to check if updating existing entry or creating new
+    chrome.storage.local.get(['syncscribe_captions'], (res) => {
+      let captions = res.syncscribe_captions || [];
+      const lastEntry = captions.length > 0 ? captions[captions.length - 1] : null;
 
-    // Send to background service worker
-    chrome.runtime.sendMessage({
-      action: 'NEW_CAPTION',
-      payload: entry
-    }).catch(err => {
-      // Context invalidated or background worker sleeping
+      // Merge incremental sentence extensions from same speaker
+      if (lastEntry && lastEntry.speaker === speaker && (cleanText.startsWith(lastEntry.text) || lastEntry.text.startsWith(cleanText))) {
+        if (cleanText.length >= lastEntry.text.length) {
+          lastEntry.text = cleanText;
+          lastEntry.timestamp = timestamp;
+          chrome.storage.local.set({ syncscribe_captions: captions });
+          chrome.runtime.sendMessage({ action: 'CAPTION_UPDATED' }).catch(() => {});
+        }
+        lastCapturedText = cleanText;
+        return;
+      }
+
+      lastCapturedText = cleanText;
+      const entry = {
+        id: Date.now() + Math.random().toString(36).substr(2, 4),
+        platform: activePlatform,
+        speaker: speaker || 'Speaker',
+        text: cleanText,
+        timestamp: timestamp,
+        rawTime: Date.now()
+      };
+
+      captions.push(entry);
+      capturedCount = captions.length;
+      updateOverlayCount(capturedCount);
+
+      chrome.storage.local.set({ syncscribe_captions: captions });
+      chrome.runtime.sendMessage({ action: 'CAPTION_UPDATED' }).catch(() => {});
     });
   }
 
