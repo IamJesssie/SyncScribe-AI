@@ -284,30 +284,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   toggleTabAudioBtn.addEventListener('click', async () => {
     if (!isAudioCapturing) {
       toggleTabAudioBtn.disabled = true;
-      toggleTabAudioBtn.innerText = '🎙️ Starting Transcription...';
+      toggleTabAudioBtn.innerText = '🎙️ Connecting Tab Audio...';
 
-      // Request mic permission from popup context (visible UI = Chrome will show prompt)
+      let streamId = null;
+      let tabTitle = 'Active Tab';
+
+      // Obtain streamId directly within click event handler (user gesture context preserved!)
       try {
-        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        tempStream.getTracks().forEach(t => t.stop());
-      } catch (permErr) {
-        console.warn('Mic permission prompt result:', permErr.message);
-      }
-
-      // Check if we already have a captured tab stream
-      const captureInfo = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'GET_CAPTURE_INFO' }, resolve);
-      });
-
-      let statusMsg = '';
-      if (captureInfo && captureInfo.hasPendingCapture) {
-        statusMsg = `Tab audio captured from "${captureInfo.capturedTabTitle}". `;
-      } else {
-        statusMsg = 'No tab audio captured. Using microphone. Click the SyncScribe icon on a meeting tab to capture tab audio. ';
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (activeTab && activeTab.id) {
+          tabTitle = activeTab.title || 'Active Tab';
+          streamId = await new Promise((resolve) => {
+            chrome.tabCapture.getMediaStreamId({ targetTabId: activeTab.id }, (id) => {
+              if (chrome.runtime.lastError) {
+                console.warn('[SyncScribe UI] tabCapture gesture warning:', chrome.runtime.lastError.message);
+                resolve(null);
+              } else {
+                resolve(id);
+              }
+            });
+          });
+        }
+      } catch (e) {
+        console.warn('[SyncScribe UI] Tab query error:', e.message);
       }
 
       const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'START_LIVE_AUDIO_CAPTURE' }, resolve);
+        chrome.runtime.sendMessage({
+          action: 'START_LIVE_AUDIO_CAPTURE',
+          streamId: streamId
+        }, resolve);
       });
       toggleTabAudioBtn.disabled = false;
 
@@ -318,7 +324,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         toggleTabAudioBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
         toggleTabAudioBtn.style.color = '#f87171';
         const methodLabel = response.method === 'webspeech' ? 'Web Speech API (Free)' : response.method === 'deepgram' ? 'Deepgram Nova-2' : response.method;
-        showToast(`${statusMsg}Transcribing via ${methodLabel}!`);
+        showToast(`Transcribing "${tabTitle}" via ${methodLabel}!`);
       } else {
         showToast(response?.error || 'Failed to start transcription engine.', true);
       }

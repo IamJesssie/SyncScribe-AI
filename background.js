@@ -244,26 +244,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// ── Start live capture (uses already-claimed stream) ────────────────────
+// ── Start live capture (uses already-claimed stream or streamId passed from UI) ────────────
 async function handleStartLiveCapture(request) {
-  if (!pendingStreamId) {
-    // No stream captured yet — try to capture now (may fail without gesture)
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs || tabs.length === 0) {
-      throw new Error('No active tab found. Click the SyncScribe AI icon on a meeting tab first.');
-    }
+  const targetStreamId = request?.streamId || pendingStreamId;
 
-    // Try tabCapture (may fail without user gesture)
+  if (targetStreamId) {
+    pendingStreamId = targetStreamId;
     try {
-      const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabs[0].id });
-      if (streamId) {
-        pendingStreamId = streamId;
-        capturedTabId = tabs[0].id;
-        capturedTabTitle = tabs[0].title || 'Active Tab';
-        await claimStreamInOffscreen(streamId);
-      }
+      await claimStreamInOffscreen(targetStreamId);
     } catch (e) {
-      console.warn('[SyncScribe AI] tabCapture requires clicking the extension icon. Falling back to mic.', e.message);
+      console.warn('[SyncScribe AI] Stream claim notice:', e.message);
     }
   }
 

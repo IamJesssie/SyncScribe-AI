@@ -209,7 +209,7 @@ function startWebSpeechSTT(stream) {
   recognition.onerror = (err) => {
     console.warn('[SyncScribe Offscreen] Speech Recognition error:', err.error);
     if (err.error === 'not-allowed') {
-      broadcast({ action: 'ENGINE_ERROR', error: 'Microphone permission denied. Please allow microphone access.' });
+      console.info('[SyncScribe Offscreen] Microphone permission notice: not-allowed');
       state = 'idle';
       return;
     }
