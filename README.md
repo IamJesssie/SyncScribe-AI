@@ -103,16 +103,21 @@ git clone https://github.com/SyncScribeAI/SyncScribeAI.git
 
 ---
 
-## ⚙️ OpenRouter API & Settings
+## ⚙️ OpenRouter API & Manual Model Selection
 
-You can customize your preferred AI model inside the **Settings** tab of the extension:
+SyncScribe AI gives you **100% full control** over which OpenRouter model processes your transcripts. In the **Settings** tab, you can enter any valid OpenRouter model string manually, or select from built-in suggestions:
 
-| Supported Model | Provider | Type |
+| Suggested Model | Provider | Type |
 | :--- | :--- | :--- |
 | `meta-llama/llama-3.3-70b-instruct:free` | Meta | Free (Default) |
 | `google/gemini-2.0-flash-lite-preview-02-05:free` | Google | Free |
 | `deepseek/deepseek-r1:free` | DeepSeek | Free |
 | `qwen/qwen-2.5-72b-instruct:free` | Alibaba Qwen | Free |
+| `mistralai/mistral-small-24b-instruct-2501:free` | Mistral AI | Free |
+| `openai/gpt-4o-mini` | OpenAI | Paid |
+| `anthropic/claude-3.5-sonnet` | Anthropic | Paid |
+
+*Simply paste or type any model ID from [OpenRouter Models](https://openrouter.ai/models) into the model setting field!*
 
 *An optional OpenRouter API Key can be entered in settings for higher rate limits.*
 

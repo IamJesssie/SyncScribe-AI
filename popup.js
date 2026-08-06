@@ -73,9 +73,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Save Preferences
   saveSettingsBtn.addEventListener('click', async () => {
+    const modelVal = modelSelect.value.trim() || 'meta-llama/llama-3.3-70b-instruct:free';
     const settings = {
       openRouterApiKey: apiKeyInput.value.trim(),
-      selectedModel: modelSelect.value,
+      selectedModel: modelVal,
       targetPhone: phoneInput.value.trim()
     };
     await chrome.storage.local.set({ syncscribe_settings: settings });
