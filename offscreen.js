@@ -25,12 +25,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'START_MIC_CAPTURE') {
+    startMicAudioCapture(request.sttApiKey, request.sttProvider)
+      .then(() => sendResponse({ success: true }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (request.action === 'STOP_TAB_CAPTURE') {
     stopTabAudioCapture();
     sendResponse({ success: true });
     return true;
   }
 });
+
+async function startMicAudioCapture(apiKey, provider) {
+  stopTabAudioCapture();
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    isTranscribing = true;
+
+    if (provider === 'deepgram' && apiKey && apiKey.trim() !== '') {
+      startDeepgramWebSocket(mediaStream, apiKey.trim());
+    } else {
+      startWebSpeechRecognition(mediaStream);
+    }
+  } catch (err) {
+    console.warn('[SyncScribe Offscreen] Mic access error, launching Web Speech API fallback:', err.message);
+    isTranscribing = true;
+    startWebSpeechRecognition(null);
+  }
+}
 
 async function startTabAudioCapture(streamId, apiKey, provider) {
   stopTabAudioCapture();

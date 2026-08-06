@@ -463,28 +463,48 @@ function waitForOffscreenReady(maxWait = 4000) {
 }
 
 async function startTabAudioCaptureForActiveTab(tabId) {
-  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
-  if (!streamId) throw new Error('Failed to get tab capture stream ID.');
-
   await ensureOffscreenDocument();
   await waitForOffscreenReady();
 
   const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
   const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
 
+  let streamId = null;
+  try {
+    streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+  } catch (e) {
+    console.warn('[SyncScribe AI] tabCapture stream occupied by another extension, falling back to mic/speech STT:', e.message);
+  }
+
+  if (streamId) {
+    const response = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: 'START_TAB_CAPTURE',
+        target: 'offscreen',
+        streamId: streamId,
+        sttApiKey: settings.sttApiKey,
+        sttProvider: settings.sttProvider
+      }, resolve);
+    });
+
+    if (response && response.success) {
+      return { success: true, method: 'tabCapture' };
+    }
+  }
+
+  // Fallback to Microphone / Web Speech STT
   const response = await new Promise((resolve) => {
     chrome.runtime.sendMessage({
-      action: 'START_TAB_CAPTURE',
+      action: 'START_MIC_CAPTURE',
       target: 'offscreen',
-      streamId: streamId,
       sttApiKey: settings.sttApiKey,
       sttProvider: settings.sttProvider
     }, resolve);
   });
 
   if (!response || !response.success) {
-    throw new Error(response?.error || 'Offscreen failed to start tab audio capture.');
+    throw new Error(response?.error || 'Failed to initialize speech transcriber engine.');
   }
 
-  return true;
+  return { success: true, method: 'mic' };
 }

@@ -119,7 +119,6 @@
     const captionSelectors = [
       'div[jsname="r4n84b"]',
       'div[jsname="YSStwy"]',
-      'div[jscontroller][class*="a7vLMe"]',
       'div[class*="a7vLMe"]',
       'div[class*="zT2df"]',
       'div[class*="NmH5Jf"]',
@@ -127,8 +126,8 @@
       'div[class*="cM9B2"]',
       'div[class*="iL4vfe"]',
       'div[class*="T4523c"]',
-      'div[role="region"][aria-label*="caption" i]',
-      'div[data-sender-name]'
+      'div[data-sender-name]',
+      'div[role="region"][aria-label*="caption" i]'
     ];
 
     const nodes = document.querySelectorAll(captionSelectors.join(','));
@@ -154,8 +153,8 @@
         speaker = 'Speaker';
       }
 
-      // Filter out non-caption UI elements (e.g. call titles, timestamps alone)
-      if (fullText && fullText.length > 1 && !fullText.includes('tdt-yhze-mpm')) {
+      // Valid caption entry processing
+      if (fullText && fullText.length > 0 && !fullText.includes('meet.google.com') && fullText !== speaker) {
         processCaptionEntry(speaker, fullText);
       }
     });
