@@ -115,7 +115,7 @@
 
   // Scraper for Google Meet
   function scrapeGoogleMeet() {
-    // Select caption regions in Meet
+    // Specific Google Meet closed caption container selectors
     const captionSelectors = [
       'div[jscontroller][class*="a7vLMe"]',
       'div[class*="zT2df"]',
@@ -123,7 +123,7 @@
       'div[class*="bhZpf"]',
       'div[class*="cM9B2"]',
       'div[role="region"][aria-label*="caption" i]',
-      'div[aria-live="polite"]'
+      'div[data-sender-name]'
     ];
 
     const nodes = document.querySelectorAll(captionSelectors.join(','));
@@ -198,6 +198,16 @@
     }
   }
 
+  // Throttled Scraper Runner to prevent CPU spikes and infinite loops
+  let scrapeTimer = null;
+  function scheduleScrape() {
+    if (scrapeTimer) return;
+    scrapeTimer = setTimeout(() => {
+      scrapeTimer = null;
+      runScraper();
+    }, 400);
+  }
+
   // Start DOM Observer
   function startObserving() {
     if (isRecording) return;
@@ -206,7 +216,19 @@
     updateOverlayStatus(`Listening (${activePlatform})...`, '#22c55e');
 
     captionObserver = new MutationObserver((mutations) => {
-      runScraper();
+      // Ignore mutations originating from SyncScribe's own overlay widget
+      const isExternalMutation = mutations.some(m => {
+        const target = m.target;
+        if (!target) return false;
+        if (target.id === 'syncscribe-overlay' || (target.closest && target.closest('#syncscribe-overlay'))) {
+          return false;
+        }
+        return true;
+      });
+
+      if (isExternalMutation) {
+        scheduleScrape();
+      }
     });
 
     captionObserver.observe(document.body, {
@@ -215,8 +237,8 @@
       characterData: true
     });
 
-    // Also interval check for dynamic DOM updates
-    window.__syncScribeInterval = setInterval(runScraper, 1000);
+    // Interval safety fallback (every 2 seconds)
+    window.__syncScribeInterval = setInterval(scheduleScrape, 2000);
   }
 
   // Stop DOM Observer
@@ -228,6 +250,10 @@
     }
     if (window.__syncScribeInterval) {
       clearInterval(window.__syncScribeInterval);
+    }
+    if (scrapeTimer) {
+      clearTimeout(scrapeTimer);
+      scrapeTimer = null;
     }
     updateOverlayStatus('Recording Paused', '#f59e0b');
   }
