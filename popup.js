@@ -284,7 +284,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   toggleTabAudioBtn.addEventListener('click', async () => {
     if (!isAudioCapturing) {
       toggleTabAudioBtn.disabled = true;
-      toggleTabAudioBtn.innerText = '🎙️ Connecting Tab Audio...';
+      toggleTabAudioBtn.innerText = '🎙️ Requesting Permission & Connecting...';
+
+      // Ensure extension origin has audio permission for Web Speech API
+      try {
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tempStream.getTracks().forEach(t => t.stop());
+      } catch (permErr) {
+        console.warn('Audio permission prompt result:', permErr.message);
+      }
+
       const response = await new Promise((resolve) => {
         chrome.runtime.sendMessage({ action: 'START_LIVE_AUDIO_CAPTURE' }, resolve);
       });

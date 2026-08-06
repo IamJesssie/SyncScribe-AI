@@ -114,12 +114,17 @@ function startWebSpeechRecognition(stream) {
 
   recognition.onerror = (err) => {
     console.warn('[SyncScribe Offscreen] Speech Recognition error:', err.error);
-    if (isTranscribing && err.error !== 'no-speech') {
+    if (err.error === 'not-allowed') {
+      console.warn('[SyncScribe Offscreen] Microphone/Speech permission not granted yet. Please click "Capture Live Tab Audio" in Popup to grant permission.');
+      isTranscribing = false;
+      return;
+    }
+    if (isTranscribing && err.error !== 'no-speech' && err.error !== 'aborted') {
       setTimeout(() => {
         if (isTranscribing && recognition) {
           try { recognition.start(); } catch (e) {}
         }
-      }, 1000);
+      }, 1500);
     }
   };
 
