@@ -113,49 +113,53 @@
     });
   }
 
-  // Scraper for Google Meet
+  // Universal Scraper for Google Meet
   function scrapeGoogleMeet() {
-    // Specific Google Meet closed caption container selectors
-    const captionSelectors = [
-      'div[jsname="r4n84b"]',
-      'div[jsname="YSStwy"]',
-      'div[class*="a7vLMe"]',
-      'div[class*="zT2df"]',
-      'div[class*="NmH5Jf"]',
-      'div[class*="bhZpf"]',
-      'div[class*="cM9B2"]',
-      'div[class*="iL4vfe"]',
-      'div[class*="T4523c"]',
-      'div[data-sender-name]',
-      'div[role="region"][aria-label*="caption" i]'
-    ];
+    // Select all potential caption container nodes in Google Meet
+    const candidateNodes = document.querySelectorAll(`
+      div[jsname="r4n84b"],
+      div[jsname="YSStwy"],
+      div[class*="a7vLMe"],
+      div[class*="zT2df"],
+      div[class*="NmH5Jf"],
+      div[class*="bhZpf"],
+      div[class*="cM9B2"],
+      div[class*="iL4vfe"],
+      div[class*="T4523c"],
+      div[class*="nM4d2c"],
+      div[class*="n74d0c"],
+      div[data-sender-name],
+      div[role="region"][aria-label*="caption" i]
+    `);
 
-    const nodes = document.querySelectorAll(captionSelectors.join(','));
-    nodes.forEach(node => {
-      // Speaker element
+    candidateNodes.forEach(node => {
+      const rawText = node.innerText ? node.innerText.trim() : '';
+      if (!rawText || rawText.length < 2) return;
+
+      // Ignore UI buttons, call titles, and URL strings
+      if (rawText.includes('meet.google.com') || rawText.includes('People') || rawText.includes('Mute all')) return;
+
+      // Google Meet formats captions as "SpeakerName\nSpoken Text"
+      const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+      if (lines.length >= 2) {
+        // First line is speaker name (e.g. "You", "asda", "Jessie Noel Lapure")
+        const possibleSpeaker = lines[0];
+        const spokenText = lines.slice(1).join(' ');
+
+        if (possibleSpeaker.length < 40 && spokenText.length > 1) {
+          processCaptionEntry(possibleSpeaker, spokenText);
+          return;
+        }
+      }
+
+      // Fallback: try element selectors if text is single line
       const speakerEl = node.querySelector('div[class*="Yz62fc"], span.zs7W8d, div[class*="M4t5We"], div.Z6B62d, div[class*="T4523c"]');
-      let speaker = speakerEl ? speakerEl.innerText.trim() : '';
+      const speaker = speakerEl ? speakerEl.innerText.trim() : 'Speaker';
+      const text = rawText.replace(speaker, '').trim();
 
-      // Caption text element
-      const textEls = node.querySelectorAll('span[class*="cGZ2Ka"], div.iL4vfe, span[jsname], div[jsname="YSStwy"]');
-      let fullText = '';
-      if (textEls.length > 0) {
-        fullText = Array.from(textEls).map(el => el.innerText.trim()).filter(t => t.length > 0).join(' ');
-      } else {
-        fullText = node.innerText.trim();
-      }
-
-      if (speaker && fullText.startsWith(speaker)) {
-        fullText = fullText.replace(speaker, '').trim();
-      }
-
-      if (!speaker || speaker === '') {
-        speaker = 'Speaker';
-      }
-
-      // Valid caption entry processing
-      if (fullText && fullText.length > 0 && !fullText.includes('meet.google.com') && fullText !== speaker) {
-        processCaptionEntry(speaker, fullText);
+      if (text && text.length > 1 && text !== speaker) {
+        processCaptionEntry(speaker, text);
       }
     });
   }
