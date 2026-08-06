@@ -103,11 +103,9 @@ function startWebSpeechRecognition(stream) {
 
   recognition.onresult = (event) => {
     for (let i = event.resultIndex; i < event.results.length; ++i) {
-      if (event.results[i].isFinal) {
-        const transcriptText = event.results[i][0].transcript.trim();
-        if (transcriptText.length > 0) {
-          sendNewCaption('Speaker', transcriptText);
-        }
+      const transcriptText = event.results[i][0].transcript ? event.results[i][0].transcript.trim() : '';
+      if (transcriptText.length > 1) {
+        sendNewCaption('Speaker', transcriptText);
       }
     }
   };

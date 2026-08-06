@@ -178,33 +178,76 @@
     });
   }
 
-  // Scraper for Zoom Web
+  // Universal Scraper for Zoom Web
   function scrapeZoom() {
-    const captionNodes = document.querySelectorAll('.caption-container, .transcript-item, .subtitle-container, div[class*="caption"]');
-    captionNodes.forEach(node => {
-      const speakerEl = node.querySelector('.speaker-name, .caption-speaker, div[class*="speaker"]');
-      const textEl = node.querySelector('.caption-text, span[class*="text"]');
+    const candidateNodes = document.querySelectorAll(`
+      .caption-container,
+      .transcript-item,
+      .subtitle-container,
+      div[class*="caption"],
+      div[class*="transcript"],
+      div[class*="subtitle"],
+      div[class*="subtitles"],
+      div[class*="zm-caption"],
+      div[class*="zm-subtitle"],
+      div[class*="closed-caption"]
+    `);
 
+    candidateNodes.forEach(node => {
+      const rawText = node.innerText ? node.innerText.trim() : '';
+      if (!rawText || rawText.length < 2) return;
+
+      if (rawText.includes('zoom.us') || rawText.includes('Mute') || rawText.includes('Start Video')) return;
+
+      const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      if (lines.length >= 2) {
+        const possibleSpeaker = lines[0];
+        const spokenText = lines.slice(1).join(' ');
+        if (possibleSpeaker.length < 40 && spokenText.length > 1) {
+          processCaptionEntry(possibleSpeaker, spokenText);
+          return;
+        }
+      }
+
+      const speakerEl = node.querySelector('.speaker-name, .caption-speaker, div[class*="speaker"], span[class*="speaker"]');
       const speaker = speakerEl ? speakerEl.innerText.trim() : 'Speaker';
-      const text = textEl ? textEl.innerText.trim() : node.innerText.replace(speaker, '').trim();
+      const text = rawText.replace(speaker, '').trim();
 
-      if (text) {
+      if (text && text.length > 1 && text !== speaker) {
         processCaptionEntry(speaker, text);
       }
     });
   }
 
-  // Scraper for MS Teams
+  // Universal Scraper for MS Teams
   function scrapeMSTeams() {
-    const captionNodes = document.querySelectorAll('div[data-tid="closed-captions-renderer"], div.ui-chat__item, div[class*="closed-captions"]');
-    captionNodes.forEach(node => {
-      const speakerEl = node.querySelector('span[data-tid="cc-speaker-name"], .ui-chat__message__author');
-      const textEl = node.querySelector('span[data-tid="cc-text"], .ui-chat__message__content');
+    const candidateNodes = document.querySelectorAll(`
+      div[data-tid="closed-captions-renderer"],
+      div.ui-chat__item,
+      div[class*="closed-captions"],
+      div[class*="closed-caption"],
+      div[class*="caption"]
+    `);
 
+    candidateNodes.forEach(node => {
+      const rawText = node.innerText ? node.innerText.trim() : '';
+      if (!rawText || rawText.length < 2) return;
+
+      const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      if (lines.length >= 2) {
+        const possibleSpeaker = lines[0];
+        const spokenText = lines.slice(1).join(' ');
+        if (possibleSpeaker.length < 40 && spokenText.length > 1) {
+          processCaptionEntry(possibleSpeaker, spokenText);
+          return;
+        }
+      }
+
+      const speakerEl = node.querySelector('span[data-tid="cc-speaker-name"], .ui-chat__message__author, span[class*="speaker"]');
       const speaker = speakerEl ? speakerEl.innerText.trim() : 'Speaker';
-      const text = textEl ? textEl.innerText.trim() : node.innerText.replace(speaker, '').trim();
+      const text = rawText.replace(speaker, '').trim();
 
-      if (text) {
+      if (text && text.length > 1 && text !== speaker) {
         processCaptionEntry(speaker, text);
       }
     });

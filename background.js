@@ -114,11 +114,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Add caption to array
+// Add caption to array with sentence smoothing & deduplication
 async function handleNewCaption(captionEntry) {
+  if (!captionEntry || !captionEntry.text || captionEntry.text.trim() === '') return;
+  const cleanText = captionEntry.text.trim();
   const captions = await getCaptions();
-  captions.push(captionEntry);
-  await saveCaptions(captions);
+  const lastEntry = captions.length > 0 ? captions[captions.length - 1] : null;
+
+  if (lastEntry && lastEntry.speaker === captionEntry.speaker && (cleanText.startsWith(lastEntry.text) || lastEntry.text.startsWith(cleanText))) {
+    if (cleanText.length >= lastEntry.text.length) {
+      lastEntry.text = cleanText;
+      lastEntry.timestamp = captionEntry.timestamp;
+      await saveCaptions(captions);
+    }
+  } else {
+    captionEntry.text = cleanText;
+    captions.push(captionEntry);
+    await saveCaptions(captions);
+  }
 
   // Broadcast to open popup if active
   chrome.runtime.sendMessage({
