@@ -26,6 +26,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const exportTxtBtn = document.getElementById('btn-export-txt');
   const exportPdfBtn = document.getElementById('btn-export-pdf');
   const clearTranscriptBtn = document.getElementById('btn-clear-transcript');
+  const uploadFileBtn = document.getElementById('btn-upload-file');
+  const uploadFileInput = document.getElementById('input-upload-file');
 
   let currentCaptions = [];
   let isRecording = true;
@@ -233,6 +235,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     SyncScribeExporter.exportPDF(currentCaptions);
   });
 
+  // Action Button: Upload Transcript File
+  uploadFileBtn.addEventListener('click', () => {
+    uploadFileInput.click();
+  });
+
+  uploadFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const fileText = evt.target.result;
+      const parsedItems = parseUploadedTranscript(fileText, file.name);
+
+      if (parsedItems.length === 0) {
+        showToast('No valid transcript lines found in uploaded file.', true);
+        return;
+      }
+
+      // Append parsed items to current captions
+      currentCaptions = [...currentCaptions, ...parsedItems];
+      await chrome.storage.local.set({ syncscribe_captions: currentCaptions });
+
+      renderTranscript(currentCaptions);
+      showToast(`Uploaded ${parsedItems.length} lines from "${file.name}"!`);
+      uploadFileInput.value = '';
+    };
+
+    reader.readAsText(file);
+  });
+
   // Action Button: Clear Transcript
   clearTranscriptBtn.addEventListener('click', async () => {
     if (confirm('Are you sure you want to clear the current meeting transcript?')) {
@@ -248,6 +281,70 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadInitialCaptions();
   await checkActiveTabStatus();
 });
+
+function parseUploadedTranscript(fileContent, fileName) {
+  if (!fileContent || fileContent.trim() === '') return [];
+
+  // Attempt JSON parsing first
+  try {
+    const json = JSON.parse(fileContent);
+    if (Array.isArray(json)) {
+      return json.map(item => ({
+        id: Date.now() + Math.random().toString(36).substr(2, 4),
+        platform: 'Uploaded File',
+        speaker: item.speaker || item.name || 'Speaker',
+        text: item.text || item.content || item.line || '',
+        timestamp: item.timestamp || item.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      })).filter(i => i.text && i.text.trim() !== '');
+    }
+  } catch (e) {
+    // Fallback to text parsing
+  }
+
+  const lines = fileContent.split(/\r?\n/);
+  const items = [];
+
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    
+    // Ignore VTT/SRT headers or timestamp index lines
+    if (trimmed.startsWith('WEBVTT') || /^\d+$/.test(trimmed) || /^\d{2}:\d{2}:\d{2}/.test(trimmed)) {
+      return;
+    }
+
+    let speaker = 'Uploaded File';
+    let text = trimmed;
+    let timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Match [Timestamp] Speaker: Content
+    const bracketMatch = trimmed.match(/^\[(.*?)\]\s*([^:]+):\s*(.*)$/);
+    if (bracketMatch) {
+      timestamp = bracketMatch[1].trim();
+      speaker = bracketMatch[2].trim();
+      text = bracketMatch[3].trim();
+    } else {
+      // Match Speaker: Content
+      const colonMatch = trimmed.match(/^([A-Z][a-zA-Z0-9\s]{1,20}):\s*(.*)$/);
+      if (colonMatch) {
+        speaker = colonMatch[1].trim();
+        text = colonMatch[2].trim();
+      }
+    }
+
+    if (text.length > 0) {
+      items.push({
+        id: Date.now() + Math.random().toString(36).substr(2, 4),
+        platform: `Uploaded (${fileName})`,
+        speaker: speaker,
+        text: text,
+        timestamp: timestamp
+      });
+    }
+  });
+
+  return items;
+}
 
 function escapeHtml(str) {
   if (!str) return '';
