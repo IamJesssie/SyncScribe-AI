@@ -1,0 +1,15 @@
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Node & Package Managers
+node_modules/
+npm-debug.log*
+
+# Extension Build output
+*.zip
+*.crx
+
+# Local Config & Secrets
+.env
+.env.local

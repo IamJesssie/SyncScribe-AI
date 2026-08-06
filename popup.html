@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncScribe AI Control Panel</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Header Section -->
+  <header class="app-header">
+    <div class="brand-container">
+      <div class="logo-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="22"></line>
+          <line x1="8" y1="22" x2="16" y2="22"></line>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">SyncScribe <span>AI</span></div>
+        <div class="brand-subtitle">Zero-Backend Meeting Relay</div>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn-icon" id="btn-toggle-recording" title="Toggle Recording">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <rect x="9" y="9" width="6" height="6" fill="currentColor"></rect>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Live Status Card -->
+  <div class="status-card">
+    <div class="status-info">
+      <div class="pulse-indicator">
+        <div class="pulse-dot" id="status-dot"></div>
+        <div class="pulse-ring" id="status-ring"></div>
+      </div>
+      <div>
+        <div class="status-text" id="status-label">Listening for captions...</div>
+        <div class="platform-pill" id="platform-label">Platform: Auto-Detect</div>
+      </div>
+    </div>
+    <div class="line-count-badge" id="line-count">0 lines</div>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <nav class="tabs-nav">
+    <button class="tab-btn active" data-tab="tab-transcript">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+        <line x1="16" y1="13" x2="8" y2="13"></line>
+        <line x1="16" y1="17" x2="8" y2="17"></line>
+      </svg>
+      Transcript
+    </button>
+
+    <button class="tab-btn" data-tab="tab-summary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+      </svg>
+      AI Summary
+    </button>
+
+    <button class="tab-btn" data-tab="tab-settings">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+      Settings
+    </button>
+  </nav>
+
+  <!-- Tab 1: Live Transcript -->
+  <section class="tab-panel active" id="tab-transcript">
+    <div class="transcript-box" id="transcript-container">
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <div>No meeting captions recorded yet.</div>
+        <div style="font-size: 11px; color: var(--text-subtle);">Open Google Meet, Zoom, or Teams and turn on Closed Captions (CC).</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tab 2: AI Summary -->
+  <section class="tab-panel" id="tab-summary">
+    <div class="summary-box" id="summary-container">
+Click "Summarize & Send to WhatsApp" below to generate a structured AI executive summary using OpenRouter free models.
+    </div>
+  </section>
+
+  <!-- Tab 3: Settings -->
+  <section class="tab-panel" id="tab-settings">
+    <div class="form-group">
+      <label class="form-label" for="setting-apikey">OpenRouter API Key (Optional for Free Models)</label>
+      <input type="password" class="form-input" id="setting-apikey" placeholder="sk-or-v1-...">
+      <div class="form-hint">Provides priority quota. Get free key at openrouter.ai</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="setting-model">Select AI Model</label>
+      <select class="form-select" id="setting-model">
+        <option value="meta-llama/llama-3.3-70b-instruct:free">Meta Llama 3.3 70B (Free)</option>
+        <option value="google/gemini-2.0-flash-lite-preview-02-05:free">Google Gemini 2.0 Flash Lite (Free)</option>
+        <option value="deepseek/deepseek-r1:free">DeepSeek R1 (Free)</option>
+        <option value="qwen/qwen-2.5-72b-instruct:free">Qwen 2.5 72B (Free)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="setting-phone">Target WhatsApp Phone Number (Optional)</label>
+      <input type="text" class="form-input" id="setting-phone" placeholder="+1234567890">
+      <div class="form-hint">Includes international country code (e.g. +62812345678)</div>
+    </div>
+
+    <button class="btn-secondary" id="btn-save-settings" style="width: 100%; justify-content: center;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+        <polyline points="7 3 7 8 15 8"></polyline>
+      </svg>
+      Save Preferences
+    </button>
+  </section>
+
+  <!-- Action Controls -->
+  <div class="actions-grid">
+    <button class="btn-primary" id="btn-summarize-whatsapp">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+      </svg>
+      Summarize & Send to WhatsApp
+    </button>
+
+    <button class="btn-secondary" id="btn-export-txt">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      Download TXT
+    </button>
+
+    <button class="btn-secondary" id="btn-export-pdf">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+        <line x1="16" y1="13" x2="8" y2="13"></line>
+        <line x1="16" y1="17" x2="8" y2="17"></line>
+      </svg>
+      Download PDF
+    </button>
+
+    <button class="btn-secondary" id="btn-clear-transcript" style="grid-column: span 2; color: var(--accent-rose);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+      </svg>
+      Clear Live Transcript
+    </button>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="app-toast">
+    <span id="toast-message">Notification message</span>
+  </div>
+
+  <script src="pdf_export.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
