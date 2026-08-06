@@ -117,11 +117,16 @@
   function scrapeGoogleMeet() {
     // Specific Google Meet closed caption container selectors
     const captionSelectors = [
+      'div[jsname="r4n84b"]',
+      'div[jsname="YSStwy"]',
       'div[jscontroller][class*="a7vLMe"]',
+      'div[class*="a7vLMe"]',
       'div[class*="zT2df"]',
       'div[class*="NmH5Jf"]',
       'div[class*="bhZpf"]',
       'div[class*="cM9B2"]',
+      'div[class*="iL4vfe"]',
+      'div[class*="T4523c"]',
       'div[role="region"][aria-label*="caption" i]',
       'div[data-sender-name]'
     ];
@@ -129,19 +134,28 @@
     const nodes = document.querySelectorAll(captionSelectors.join(','));
     nodes.forEach(node => {
       // Speaker element
-      const speakerEl = node.querySelector('div[class*="Yz62fc"], span.zs7W8d, div[class*="M4t5We"], div.Z6B62d');
-      const speaker = speakerEl ? speakerEl.innerText.trim() : 'Speaker';
+      const speakerEl = node.querySelector('div[class*="Yz62fc"], span.zs7W8d, div[class*="M4t5We"], div.Z6B62d, div[class*="T4523c"]');
+      let speaker = speakerEl ? speakerEl.innerText.trim() : '';
 
       // Caption text element
-      const textEls = node.querySelectorAll('span[class*="cGZ2Ka"], div.iL4vfe, span[jsname]');
+      const textEls = node.querySelectorAll('span[class*="cGZ2Ka"], div.iL4vfe, span[jsname], div[jsname="YSStwy"]');
       let fullText = '';
       if (textEls.length > 0) {
-        fullText = Array.from(textEls).map(el => el.innerText.trim()).join(' ');
+        fullText = Array.from(textEls).map(el => el.innerText.trim()).filter(t => t.length > 0).join(' ');
       } else {
-        fullText = node.innerText.replace(speaker, '').trim();
+        fullText = node.innerText.trim();
       }
 
-      if (fullText) {
+      if (speaker && fullText.startsWith(speaker)) {
+        fullText = fullText.replace(speaker, '').trim();
+      }
+
+      if (!speaker || speaker === '') {
+        speaker = 'Speaker';
+      }
+
+      // Filter out non-caption UI elements (e.g. call titles, timestamps alone)
+      if (fullText && fullText.length > 1 && !fullText.includes('tdt-yhze-mpm')) {
         processCaptionEntry(speaker, fullText);
       }
     });
