@@ -141,6 +141,21 @@ Click "Summarize & Send to WhatsApp" below to generate a structured AI executive
     </div>
 
     <div class="form-group">
+      <label class="form-label" for="setting-stt-provider">Audio Speech-to-Text Transcriber Engine</label>
+      <select class="form-select" id="setting-stt-provider">
+        <option value="deepgram">Deepgram Nova-2 (Speaker Diarization - Recommended)</option>
+        <option value="whisper">Groq / OpenAI Whisper API</option>
+      </select>
+      <div class="form-hint">Transcribes in-person physical meeting audio files (.m4a, .mp3, .wav) with speaker identification</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="setting-stt-key">Deepgram / Audio API Key</label>
+      <input type="password" class="form-input" id="setting-stt-key" placeholder="Deepgram API key...">
+      <div class="form-hint">Get $200 free credit (~750 hrs free) at console.deepgram.com</div>
+    </div>
+
+    <div class="form-group">
       <label class="form-label" for="setting-phone">Target WhatsApp Phone Number (Optional)</label>
       <input type="text" class="form-input" id="setting-phone" placeholder="+1234567890">
       <div class="form-hint">Leave BLANK to send to ANY WhatsApp Group Chat! Include country code for direct user chat (+628123...)</div>
@@ -169,7 +184,7 @@ Click "Summarize & Send to WhatsApp" below to generate a structured AI executive
   </section>
 
   <!-- Action Controls -->
-  <input type="file" id="input-upload-file" accept=".txt,.json,.vtt,.srt,.log" style="display: none;">
+  <input type="file" id="input-upload-file" accept=".txt,.json,.vtt,.srt,.log,.mp3,.wav,.m4a,.ogg,.aac,.webm,.flac" style="display: none;">
   
   <div class="actions-grid">
     <button class="btn-primary" id="btn-generate-summary" style="grid-column: span 2; background: var(--primary-gradient);">
@@ -220,7 +235,7 @@ Click "Summarize & Send to WhatsApp" below to generate a structured AI executive
         <polyline points="17 8 12 3 7 8"></polyline>
         <line x1="12" y1="3" x2="12" y2="15"></line>
       </svg>
-      Upload Transcript File (.txt, .vtt, .srt, .json)
+      Upload Transcript or Audio File (.m4a, .mp3, .wav, .txt)
     </button>
 
     <button class="btn-secondary" id="btn-export-txt">

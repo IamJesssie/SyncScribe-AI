@@ -20,6 +20,8 @@ const DEFAULT_SETTINGS = {
   selectedModel: 'meta-llama/llama-3.3-70b-instruct:free',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   useAutoMetaPrompt: true,
+  sttProvider: 'deepgram',
+  sttApiKey: '',
   targetPhone: '',
   slackWebhookUrl: '',
   teamsWebhookUrl: ''
@@ -65,6 +67,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'SYNTHESIZE_SYSTEM_PROMPT') {
     handleSynthesizeSystemPrompt(request.customApiKey, request.customModel)
       .then(prompt => sendResponse({ success: true, systemPrompt: prompt }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  } else if (request.action === 'TRANSCRIBE_AUDIO') {
+    handleTranscribeAudio(request.audioDataUrl, request.mimeType, request.fileName, request.customSttKey, request.customSttProvider)
+      .then(items => sendResponse({ success: true, captions: items }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   } else if (request.action === 'SEND_TO_WHATSAPP') {
@@ -314,4 +321,91 @@ async function sendTeamsRelay(textSummary, overrideWebhook) {
     await chrome.tabs.create({ url: 'https://teams.microsoft.com/' });
     return { success: true, method: 'tab' };
   }
+}
+
+// Handle Audio File Speech-to-Text Transcription
+async function handleTranscribeAudio(audioDataUrl, mimeType, fileName, customSttKey, customSttProvider) {
+  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
+  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
+
+  const sttKey = customSttKey || settings.sttApiKey;
+  const sttProvider = customSttProvider || settings.sttProvider || 'deepgram';
+
+  if (sttProvider === 'deepgram' || (sttKey && sttKey.trim().length > 10)) {
+    if (!sttKey || sttKey.trim() === '') {
+      throw new Error('Deepgram API Key is required for Deepgram Nova-2 Audio Transcription. Please enter your key in Settings or sign up at console.deepgram.com ($200 free credit!).');
+    }
+    return await transcribeDeepgram(audioDataUrl, mimeType, sttKey.trim(), fileName);
+  } else {
+    throw new Error('Please configure a Deepgram or Speech-to-Text API Key in Settings to transcribe audio files.');
+  }
+}
+
+// Deepgram Nova-2 Speech-to-Text with Speaker Diarization
+async function transcribeDeepgram(audioDataUrl, mimeType, apiKey, fileName) {
+  console.log(`[SyncScribe AI] Sending audio file "${fileName}" to Deepgram Nova-2 API...`);
+
+  // Convert Base64 data URL to ArrayBuffer
+  const base64Part = audioDataUrl.split(',')[1];
+  const binaryString = atob(base64Part);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  const cleanMime = (mimeType && mimeType.includes('/')) ? mimeType.split(';')[0] : 'audio/mp3';
+  const deepgramUrl = 'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&utterances=true';
+
+  const response = await fetch(deepgramUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${apiKey}`,
+      'Content-Type': cleanMime
+    },
+    body: bytes.buffer
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errDetail = errorText;
+    try {
+      const errJson = JSON.parse(errorText);
+      errDetail = errJson.err_msg || errJson.reason || errorText;
+    } catch (e) {}
+    throw new Error(`Deepgram API Error (${response.status}): ${errDetail}`);
+  }
+
+  const data = await response.json();
+  const utterances = data.results?.utterances || [];
+
+  if (utterances.length > 0) {
+    return utterances.map(u => ({
+      id: Date.now() + Math.random().toString(36).substr(2, 4),
+      platform: `Audio File (${fileName})`,
+      speaker: `Speaker ${u.speaker !== undefined ? u.speaker + 1 : 1}`,
+      timestamp: formatSecondsToTime(u.start),
+      text: u.transcript ? u.transcript.trim() : ''
+    })).filter(item => item.text !== '');
+  }
+
+  // Fallback if utterances array is empty
+  const alt = data.results?.channels?.[0]?.alternatives?.[0];
+  if (alt && alt.transcript && alt.transcript.trim() !== '') {
+    return [{
+      id: Date.now() + Math.random().toString(36).substr(2, 4),
+      platform: `Audio File (${fileName})`,
+      speaker: 'Speaker 1',
+      timestamp: '00:00',
+      text: alt.transcript.trim()
+    }];
+  }
+
+  throw new Error('No Speech-to-Text transcript returned from Deepgram.');
+}
+
+function formatSecondsToTime(seconds) {
+  const secNum = parseInt(seconds, 10) || 0;
+  const mins = Math.floor(secNum / 60);
+  const secs = secNum % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }

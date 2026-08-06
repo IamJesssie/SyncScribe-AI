@@ -19,6 +19,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const modelSelect = document.getElementById('setting-model');
   const systemPromptInput = document.getElementById('setting-systemprompt');
   const autoMetaPromptCheckbox = document.getElementById('setting-auto-metaprompt');
+  const sttProviderSelect = document.getElementById('setting-stt-provider');
+  const sttApiKeyInput = document.getElementById('setting-stt-key');
   const phoneInput = document.getElementById('setting-phone');
   const slackInput = document.getElementById('setting-slack');
   const teamsInput = document.getElementById('setting-teams');
@@ -80,6 +82,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (s.selectedModel) modelSelect.value = s.selectedModel;
       if (s.systemPrompt) systemPromptInput.value = s.systemPrompt;
       if (s.useAutoMetaPrompt !== undefined) autoMetaPromptCheckbox.checked = s.useAutoMetaPrompt;
+      if (s.sttProvider) sttProviderSelect.value = s.sttProvider;
+      if (s.sttApiKey) sttApiKeyInput.value = s.sttApiKey;
       if (s.targetPhone) phoneInput.value = s.targetPhone;
       if (s.slackWebhookUrl) slackInput.value = s.slackWebhookUrl;
       if (s.teamsWebhookUrl) teamsInput.value = s.teamsWebhookUrl;
@@ -94,6 +98,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       selectedModel: modelVal,
       systemPrompt: systemPromptInput.value.trim(),
       useAutoMetaPrompt: autoMetaPromptCheckbox.checked,
+      sttProvider: sttProviderSelect.value,
+      sttApiKey: sttApiKeyInput.value.trim(),
       targetPhone: phoneInput.value.trim(),
       slackWebhookUrl: slackInput.value.trim(),
       teamsWebhookUrl: teamsInput.value.trim()
@@ -378,30 +384,80 @@ document.addEventListener('DOMContentLoaded', async () => {
     uploadFileInput.click();
   });
 
-  uploadFileInput.addEventListener('change', (e) => {
+  uploadFileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      const fileText = evt.target.result;
-      const parsedItems = parseUploadedTranscript(fileText, file.name);
+    const ext = file.name.split('.').pop().toLowerCase();
+    const isAudio = file.type.startsWith('audio/') || ['mp3', 'wav', 'm4a', 'ogg', 'aac', 'webm', 'flac'].includes(ext);
 
-      if (parsedItems.length === 0) {
-        showToast('No valid transcript lines found in uploaded file.', true);
-        return;
-      }
+    if (isAudio) {
+      // Audio File Transcription via Deepgram Speech-to-Text
+      uploadFileBtn.disabled = true;
+      uploadFileBtn.innerText = '🎙️ Transcribing Audio via Deepgram AI...';
+      showToast(`Transcribing audio file "${file.name}"... This takes a few seconds.`);
 
-      // Append parsed items to current captions
-      currentCaptions = [...currentCaptions, ...parsedItems];
-      await chrome.storage.local.set({ syncscribe_captions: currentCaptions });
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        try {
+          const audioDataUrl = evt.target.result;
+          const response = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+              action: 'TRANSCRIBE_AUDIO',
+              audioDataUrl: audioDataUrl,
+              mimeType: file.type || `audio/${ext}`,
+              fileName: file.name,
+              customSttKey: sttApiKeyInput.value.trim(),
+              customSttProvider: sttProviderSelect.value
+            }, resolve);
+          });
 
-      renderTranscript(currentCaptions);
-      showToast(`Uploaded ${parsedItems.length} lines from "${file.name}"!`);
-      uploadFileInput.value = '';
-    };
+          if (!response || !response.success) {
+            throw new Error(response?.error || 'Audio transcription failed.');
+          }
 
-    reader.readAsText(file);
+          const parsedItems = response.captions || [];
+          if (parsedItems.length === 0) {
+            throw new Error('No speech detected in uploaded audio file.');
+          }
+
+          currentCaptions = [...currentCaptions, ...parsedItems];
+          await chrome.storage.local.set({ syncscribe_captions: currentCaptions });
+
+          renderTranscript(currentCaptions);
+          showToast(`Transcribed ${parsedItems.length} utterances from "${file.name}"!`);
+        } catch (err) {
+          showToast(err.message, true);
+        } finally {
+          uploadFileBtn.disabled = false;
+          uploadFileBtn.innerText = '📁 Upload Transcript or Audio File (.m4a, .mp3, .wav, .txt)';
+          uploadFileInput.value = '';
+        }
+      };
+
+      reader.readAsDataURL(file);
+    } else {
+      // Text File Parsing (.txt, .vtt, .srt, .json)
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const fileText = evt.target.result;
+        const parsedItems = parseUploadedTranscript(fileText, file.name);
+
+        if (parsedItems.length === 0) {
+          showToast('No valid transcript lines found in uploaded file.', true);
+          return;
+        }
+
+        currentCaptions = [...currentCaptions, ...parsedItems];
+        await chrome.storage.local.set({ syncscribe_captions: currentCaptions });
+
+        renderTranscript(currentCaptions);
+        showToast(`Uploaded ${parsedItems.length} lines from "${file.name}"!`);
+        uploadFileInput.value = '';
+      };
+
+      reader.readAsText(file);
+    }
   });
 
   // Action Button: Clear Transcript

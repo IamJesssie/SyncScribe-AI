@@ -9,11 +9,11 @@ SyncScribe AI is a 100% serverless, open-source Chrome Extension (Manifest V3) t
 ## 🌟 Key Features
 
 * 🟢 **Zero-Backend & 100% Free:** No `npm start`, localhost servers, or backend hosting required. Everything runs inside your browser.
-* 🎙️ **Universal DOM Scraper:** Automatically captures speaker names, timestamps, and closed captions from Google Meet, Zoom Web, and MS Teams.
+* 🎙️ **Universal Audio & DOM Transcriber:** Live closed caption scraper for Google Meet, Zoom, and Teams + **Audio File Speech-to-Text** for physical meeting recordings (`.m4a`, `.mp3`, `.wav`, `.aac`, `.ogg`) using **Deepgram Nova-2** with automatic speaker identification (`Speaker 1`, `Speaker 2`).
 * 🤖 **OpenRouter AI Integration:** Generates executive summaries using top free models (`Meta Llama 3.3 70B`, `Google Gemini 2.0 Flash Lite`, `DeepSeek R1`, `Qwen 2.5 72B`, `Mistral Small 24B`).
 * ✨ **Auto-Detect Persona & Meta-Prompting:** Automatically runs a 2-stage analysis pass over transcripts to dynamically detect meeting titles, participant roles (e.g. Software Engineers vs. Clinical Reviewers), operational rules, and key metrics.
 * 💬 **Multi-Platform Dispatch Relay:** Instant dispatch to **WhatsApp Web** (chats or group picker), **Slack** (via Webhook or Web), and **MS Teams** (via Webhook or Web).
-* 📁 **Transcript File Upload Support:** Upload external `.txt`, `.vtt`, `.srt`, or `.json` transcript files directly into the extension to generate AI summaries instantly.
+* 📁 **Transcript & Audio Upload Support:** Upload external `.txt`, `.vtt`, `.srt`, `.json`, `.mp3`, `.m4a`, or `.wav` files directly into the extension.
 * 📄 **Multi-Format Document Exporter:** One-click exports for `.txt` plain text transcripts and formatted printable `.pdf` meeting reports.
 * 🎨 **Ultra-Sleek Glassmorphism Dashboard:** Dark-mode popup UI with real-time sentence counter, live status indicators, tab navigation, and settings panel.
 
