@@ -134,14 +134,31 @@ async function handleStart(streamId, apiKey, provider) {
       });
     }
 
+    // ── Mix microphone audio + tab audio so BOTH user and participants are transcribed ──
+    let combinedStream = tabStream;
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const mixingCtx = new AudioContext();
+      const tabSource = mixingCtx.createMediaStreamSource(tabStream);
+      const micSource = mixingCtx.createMediaStreamSource(micStream);
+      const dest = mixingCtx.createMediaStreamDestination();
+      
+      tabSource.connect(dest);
+      micSource.connect(dest);
+      combinedStream = dest.stream;
+      console.log('[SyncScribe Offscreen] Successfully mixed Tab Audio + Mic Audio!');
+    } catch (micErr) {
+      console.info('[SyncScribe Offscreen] Mic mixing notice:', micErr.message);
+    }
+
     // ── Start STT engine ──
     const useDeepgram = provider === 'deepgram' && apiKey && apiKey.trim() !== '';
 
     if (useDeepgram) {
-      startDeepgramSTT(tabStream, apiKey.trim());
+      startDeepgramSTT(combinedStream, apiKey.trim());
       return { method: 'deepgram' };
     } else {
-      startWebSpeechSTT(tabStream);
+      startWebSpeechSTT(combinedStream);
       return { method: 'webspeech' };
     }
   } catch (err) {

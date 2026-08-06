@@ -204,6 +204,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(prompt => sendResponse({ success: true, systemPrompt: prompt }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
+  } else if (request.action === 'ASK_AI_COPILOT') {
+    handleAskAiCopilot(request.question, request.customApiKey, request.customModel)
+      .then(answer => sendResponse({ success: true, answer }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
   } else if (request.action === 'TRANSCRIBE_AUDIO') {
     handleTranscribeAudio(request.audioDataUrl, request.mimeType, request.fileName, request.customSttKey, request.customSttProvider)
       .then(items => sendResponse({ success: true, captions: items }))
@@ -393,6 +398,71 @@ async function handleSynthesizeSystemPrompt(overrideKey, overrideModel) {
     throw new Error('Failed to generate dynamic system prompt from OpenRouter.');
   }
   return prompt;
+}
+
+// ── AI Copilot Real-Time Q&A Handler ────────────────────────────────────
+async function handleAskAiCopilot(question, overrideKey, overrideModel) {
+  const captions = await getCaptions();
+  if (captions.length === 0) {
+    throw new Error('No meeting transcript available to analyze yet. Start recording or upload a transcript file first.');
+  }
+
+  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
+  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
+
+  const apiKey = overrideKey || settings.openRouterApiKey;
+  const model = overrideModel || settings.selectedModel || 'meta-llama/llama-3.3-70b-instruct:free';
+
+  const fullTranscript = captions.map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`).join('\n');
+
+  const systemInstruction = `You are SyncScribe AI Copilot, a real-time intelligent meeting assistant for software engineers, clinical reviewers, and operations leads during high-stakes corporate meetings (e.g. San Diego Eye Bank x Cebu Team).
+Analyze the meeting transcript below and provide a concise, direct, highly professional answer to the user's question.
+
+Guidelines:
+1. If the user asks "What should I answer right now?", analyze what HR, the host, or speaker recently asked, and craft a clear, confident, professional response for the user to speak immediately.
+2. Highlight key technical details, clinical rules, dates, or deadlines mentioned.
+3. Be concise and direct (2-4 bullet points max) so the user can quickly scan the answer during a live meeting.`;
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'HTTP-Referer': 'https://github.com/SyncScribeAI',
+    'X-Title': 'SyncScribe AI Extension'
+  };
+
+  if (apiKey && apiKey.trim() !== '') {
+    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+  }
+
+  const requestBody = {
+    model: model,
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: `MEETING TRANSCRIPT:\n${fullTranscript}\n\nUSER QUESTION: ${question}` }
+    ],
+    temperature: 0.3
+  };
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    let errDetail = errText;
+    try {
+      const errJson = JSON.parse(errText);
+      errDetail = errJson.error?.message || errText;
+    } catch (e) {}
+    throw new Error(`AI Copilot Error (${response.status}): ${errDetail}`);
+  }
+
+  const data = await response.json();
+  const answer = data.choices?.[0]?.message?.content;
+  if (!answer) throw new Error('Received empty response from AI Copilot.');
+
+  return answer;
 }
 
 // ── Stage 2: Generate Summary using OpenRouter Models ───────────────────

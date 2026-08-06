@@ -41,6 +41,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const uploadFileBtn = document.getElementById('btn-upload-file');
   const uploadFileInput = document.getElementById('input-upload-file');
 
+  // AI Copilot Elements
+  const copilotAnswerContainer = document.getElementById('copilot-answer-container');
+  const copilotInputQuestion = document.getElementById('copilot-input-question');
+  const btnAskCopilot = document.getElementById('btn-ask-copilot');
+  const pillAnswerNow = document.getElementById('pill-answer-now');
+  const pillRecentSummary = document.getElementById('pill-recent-summary');
+  const pillExplainTerms = document.getElementById('pill-explain-terms');
+  const pillCebuTasks = document.getElementById('pill-cebu-tasks');
+
   let currentCaptions = [];
   let isRecording = true;
   let isAudioCapturing = false;
@@ -279,6 +288,77 @@ document.addEventListener('DOMContentLoaded', async () => {
       `;
     }
   });
+
+  // ── AI Copilot Real-Time Q&A Handlers ────────────────────────────────
+  async function askAiCopilot(questionText) {
+    if (!questionText || questionText.trim() === '') return;
+    try {
+      if (btnAskCopilot) btnAskCopilot.disabled = true;
+      if (copilotAnswerContainer) copilotAnswerContainer.innerText = '⚡ AI Copilot is analyzing meeting transcript...';
+      showToast('Asking AI Copilot...');
+
+      const res = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action: 'ASK_AI_COPILOT',
+          question: questionText.trim(),
+          customApiKey: apiKeyInput.value.trim(),
+          customModel: modelSelect.value
+        }, resolve);
+      });
+
+      if (!res || !res.success) {
+        throw new Error(res?.error || 'AI Copilot failed to generate answer.');
+      }
+
+      if (copilotAnswerContainer) copilotAnswerContainer.innerText = res.answer;
+      showToast('AI Copilot answer generated!');
+    } catch (err) {
+      if (copilotAnswerContainer) copilotAnswerContainer.innerText = `⚠ Error: ${err.message}`;
+      showToast(err.message, true);
+    } finally {
+      if (btnAskCopilot) btnAskCopilot.disabled = false;
+    }
+  }
+
+  if (btnAskCopilot) {
+    btnAskCopilot.addEventListener('click', () => {
+      askAiCopilot(copilotInputQuestion.value);
+    });
+  }
+
+  if (copilotInputQuestion) {
+    copilotInputQuestion.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') askAiCopilot(copilotInputQuestion.value);
+    });
+  }
+
+  if (pillAnswerNow) {
+    pillAnswerNow.addEventListener('click', () => {
+      if (copilotInputQuestion) copilotInputQuestion.value = 'What answer should I give HR or the speaker right now?';
+      askAiCopilot('What answer should I give HR or the speaker right now? Provide a clear, confident, professional response for me to speak immediately.');
+    });
+  }
+
+  if (pillRecentSummary) {
+    pillRecentSummary.addEventListener('click', () => {
+      if (copilotInputQuestion) copilotInputQuestion.value = 'Summarize recent discussion in 3 key bullet points.';
+      askAiCopilot('Summarize what was discussed recently in 3 key bullet points.');
+    });
+  }
+
+  if (pillExplainTerms) {
+    pillExplainTerms.addEventListener('click', () => {
+      if (copilotInputQuestion) copilotInputQuestion.value = 'Explain technical, clinical, or operational terms and rules mentioned.';
+      askAiCopilot('Explain technical, clinical, or operational terms and rules mentioned in this meeting.');
+    });
+  }
+
+  if (pillCebuTasks) {
+    pillCebuTasks.addEventListener('click', () => {
+      if (copilotInputQuestion) copilotInputQuestion.value = 'List action items assigned to software engineers or clinical reviewers.';
+      askAiCopilot('List action items assigned to software engineers or clinical reviewers in Cebu.');
+    });
+  }
 
   // Action Button: Toggle Live Tab Audio Capture (Direct STT)
   toggleTabAudioBtn.addEventListener('click', async () => {
