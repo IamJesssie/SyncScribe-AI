@@ -291,24 +291,45 @@ async function handleStartLiveCapture(request) {
   return { success: true, tabTitle: capturedTabTitle, method: response.method };
 }
 
-// ── Add caption to array with sentence smoothing & deduplication ────────
+// ── Add caption to array with robust cross-source deduplication & speaker upgrading ──
 async function handleNewCaption(captionEntry) {
   if (!captionEntry || !captionEntry.text || captionEntry.text.trim() === '') return;
   const cleanText = captionEntry.text.trim();
   const captions = await getCaptions();
-  const lastEntry = captions.length > 0 ? captions[captions.length - 1] : null;
+  
+  // Look at recent 12 entries to check for text similarity or speaker upgrade
+  const recentSliceIndex = Math.max(0, captions.length - 12);
+  const recentCaptions = captions.slice(recentSliceIndex);
 
-  if (lastEntry && lastEntry.speaker === captionEntry.speaker && (cleanText.startsWith(lastEntry.text) || lastEntry.text.startsWith(cleanText))) {
-    if (cleanText.length >= lastEntry.text.length) {
-      lastEntry.text = cleanText;
-      lastEntry.timestamp = captionEntry.timestamp;
-      await saveCaptions(captions);
+  const existingMatch = recentCaptions.find(c => {
+    const textA = c.text.toLowerCase();
+    const textB = cleanText.toLowerCase();
+    return textA === textB || textA.includes(textB) || textB.includes(textA);
+  });
+
+  if (existingMatch) {
+    // Speaker Upgrade: If existing entry has generic speaker ("Speaker" / "Participant")
+    // and new entry has a real name (e.g. "markus", "Jessie Noel Lapure"), upgrade it!
+    if ((existingMatch.speaker === 'Speaker' || existingMatch.speaker === 'Participant') && 
+        captionEntry.speaker && captionEntry.speaker !== 'Speaker' && captionEntry.speaker !== 'Participant') {
+      existingMatch.speaker = captionEntry.speaker;
     }
-  } else {
-    captionEntry.text = cleanText;
-    captions.push(captionEntry);
+
+    // Text extension upgrade: if new text is longer/fuller, update text
+    if (cleanText.length > existingMatch.text.length) {
+      existingMatch.text = cleanText;
+      existingMatch.timestamp = captionEntry.timestamp;
+    }
+
     await saveCaptions(captions);
+    broadcastToRuntime({ action: 'CAPTION_UPDATED', captionsCount: captions.length });
+    return;
   }
+
+  // Brand new entry
+  captionEntry.text = cleanText;
+  captions.push(captionEntry);
+  await saveCaptions(captions);
 
   broadcastToRuntime({
     action: 'CAPTION_UPDATED',

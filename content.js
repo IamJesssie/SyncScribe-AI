@@ -91,20 +91,33 @@
 
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    // Read storage to check if updating existing entry or creating new
     chrome.storage.local.get(['syncscribe_captions'], (res) => {
       let captions = res.syncscribe_captions || [];
-      const lastEntry = captions.length > 0 ? captions[captions.length - 1] : null;
+      
+      // Look at recent 12 entries to check for text similarity or speaker upgrade
+      const recentSliceIndex = Math.max(0, captions.length - 12);
+      const recentCaptions = captions.slice(recentSliceIndex);
 
-      // Merge incremental sentence extensions from same speaker
-      if (lastEntry && lastEntry.speaker === speaker && (cleanText.startsWith(lastEntry.text) || lastEntry.text.startsWith(cleanText))) {
-        if (cleanText.length >= lastEntry.text.length) {
-          lastEntry.text = cleanText;
-          lastEntry.timestamp = timestamp;
-          chrome.storage.local.set({ syncscribe_captions: captions });
-          chrome.runtime.sendMessage({ action: 'CAPTION_UPDATED' }).catch(() => {});
+      const existingMatch = recentCaptions.find(c => {
+        const textA = c.text.toLowerCase();
+        const textB = cleanText.toLowerCase();
+        return textA === textB || textA.includes(textB) || textB.includes(textA);
+      });
+
+      if (existingMatch) {
+        if ((existingMatch.speaker === 'Speaker' || existingMatch.speaker === 'Participant') &&
+            speaker && speaker !== 'Speaker' && speaker !== 'Participant') {
+          existingMatch.speaker = speaker;
         }
+
+        if (cleanText.length > existingMatch.text.length) {
+          existingMatch.text = cleanText;
+          existingMatch.timestamp = timestamp;
+        }
+
         lastCapturedText = cleanText;
+        chrome.storage.local.set({ syncscribe_captions: captions });
+        chrome.runtime.sendMessage({ action: 'CAPTION_UPDATED' }).catch(() => {});
         return;
       }
 
@@ -127,11 +140,10 @@
     });
   }
 
-  // Universal Scraper for Google Meet
+  // Universal Scraper for Google Meet (item-level parsing)
   function scrapeGoogleMeet() {
-    // Select all potential caption container nodes in Google Meet
+    // Select ONLY individual item caption nodes in Google Meet (never the parent container div[jsname="r4n84b"])
     const candidateNodes = document.querySelectorAll(`
-      div[jsname="r4n84b"],
       div[jsname="YSStwy"],
       div[class*="a7vLMe"],
       div[class*="zT2df"],
@@ -141,9 +153,7 @@
       div[class*="iL4vfe"],
       div[class*="T4523c"],
       div[class*="nM4d2c"],
-      div[class*="n74d0c"],
-      div[data-sender-name],
-      div[role="region"][aria-label*="caption" i]
+      div[class*="n74d0c"]
     `);
 
     candidateNodes.forEach(node => {
@@ -153,27 +163,34 @@
       // Ignore UI buttons, call titles, and URL strings
       if (rawText.includes('meet.google.com') || rawText.includes('People') || rawText.includes('Mute all')) return;
 
-      // Google Meet formats captions as "SpeakerName\nSpoken Text"
+      // Speaker element selector inside individual caption block
+      const speakerEl = node.querySelector('div[class*="Yz62fc"], span.zs7W8d, div[class*="M4t5We"], div.Z6B62d, div[class*="T4523c"], span[class*="zs7W8d"]');
+      let speaker = speakerEl ? speakerEl.innerText.trim() : '';
+
       const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-      if (lines.length >= 2) {
-        // First line is speaker name (e.g. "You", "asda", "Jessie Noel Lapure")
-        const possibleSpeaker = lines[0];
-        const spokenText = lines.slice(1).join(' ');
-
-        if (possibleSpeaker.length < 40 && spokenText.length > 1) {
-          processCaptionEntry(possibleSpeaker, spokenText);
-          return;
+      // If speaker wasn't found via selector, check if line 1 is speaker name
+      if (!speaker && lines.length >= 2) {
+        if (lines[0].length < 35) {
+          speaker = lines[0];
         }
       }
 
-      // Fallback: try element selectors if text is single line
-      const speakerEl = node.querySelector('div[class*="Yz62fc"], span.zs7W8d, div[class*="M4t5We"], div.Z6B62d, div[class*="T4523c"]');
-      const speaker = speakerEl ? speakerEl.innerText.trim() : 'Speaker';
-      const text = rawText.replace(speaker, '').trim();
+      let spokenText = '';
+      if (speaker && rawText.startsWith(speaker)) {
+        spokenText = rawText.replace(speaker, '').trim();
+      } else if (lines.length >= 2 && lines[0] === speaker) {
+        spokenText = lines.slice(1).join(' ');
+      } else {
+        spokenText = rawText;
+      }
 
-      if (text && text.length > 1 && text !== speaker) {
-        processCaptionEntry(speaker, text);
+      if (!speaker || speaker === '') {
+        speaker = 'Speaker';
+      }
+
+      if (spokenText && spokenText.length > 1 && spokenText !== speaker) {
+        processCaptionEntry(speaker, spokenText);
       }
     });
   }
