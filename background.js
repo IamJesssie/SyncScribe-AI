@@ -1,6 +1,8 @@
 /**
  * SyncScribe AI - Service Worker & State Manager
  * Handles transcript storage, OpenRouter AI summarization, and WhatsApp deep-linking
+ * 
+ * Architecture: Sidecue-style tabCapture with user gesture preservation
  */
 
 const DEFAULT_SYSTEM_PROMPT = `You are SyncScribe AI, an expert meeting note taker. Your task is to analyze the following live meeting transcript and produce a clean, structured summary optimized for WhatsApp messaging.
@@ -20,14 +22,20 @@ const DEFAULT_SETTINGS = {
   selectedModel: 'meta-llama/llama-3.3-70b-instruct:free',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   useAutoMetaPrompt: true,
-  sttProvider: 'deepgram',
+  sttProvider: 'webspeech',
   sttApiKey: '',
   targetPhone: '',
   slackWebhookUrl: '',
   teamsWebhookUrl: ''
 };
 
-// Initialize Storage & SidePanel on install
+// ── State Variables ─────────────────────────────────────────────────────
+let pendingStreamId = null;
+let capturedTabId = null;
+let capturedTabTitle = null;
+let captureActive = false;
+
+// ── Initialize Storage & SidePanel on install ───────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get(['syncscribe_captions', 'syncscribe_settings'], (result) => {
     if (!result.syncscribe_captions) {
@@ -38,26 +46,149 @@ chrome.runtime.onInstalled.addListener(() => {
     }
   });
 
+  // SidePanel: open on action click is FALSE so we can use action.onClicked for tab capture
   if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
   }
 });
 
-// Helper to get all stored captions
+// ── CRITICAL: Capture tab audio on icon click (preserves user gesture!) ──
+// This is the Sidecue pattern: tabCapture.getMediaStreamId MUST be called
+// inside action.onClicked to preserve Chrome's user gesture context.
+chrome.action.onClicked.addListener((tab) => {
+  // Must call synchronously (no await) to preserve user gesture
+  startCaptureFlow(tab);
+});
+
+function isUncapturableUrl(url) {
+  if (!url) return true;
+  return /^(chrome|chrome-extension|edge|about|file|view-source|devtools):/.test(url) ||
+    url.includes('chrome.google.com/webstore') ||
+    url.includes('chromewebstore.google.com');
+}
+
+function startCaptureFlow(tab) {
+  if (!tab || !tab.id || isUncapturableUrl(tab.url)) {
+    // Can't capture this tab, just open side panel
+    chrome.sidePanel.open({ windowId: tab?.windowId }).catch(() => {});
+    return;
+  }
+
+  // If already capturing this tab, just open the side panel
+  if (pendingStreamId && capturedTabId === tab.id) {
+    chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+    return;
+  }
+
+  // Release old stream if capturing a different tab
+  if (captureActive && capturedTabId !== tab.id) {
+    chrome.runtime.sendMessage({ action: 'ENGINE_STOP', target: 'offscreen' }).catch(() => {});
+    clearCaptureState();
+  }
+
+  // Get stream ID synchronously within user gesture context
+  chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }, (streamId) => {
+    if (chrome.runtime.lastError || !streamId) {
+      console.warn('[SyncScribe AI] tabCapture failed:', chrome.runtime.lastError?.message);
+      // Still open side panel so user can use other features
+      chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+      return;
+    }
+
+    pendingStreamId = streamId;
+    capturedTabId = tab.id;
+    capturedTabTitle = tab.title || 'Active Tab';
+
+    console.log(`[SyncScribe AI] Tab audio captured: "${capturedTabTitle}" (streamId: ${streamId.substring(0, 20)}...)`);
+
+    // Immediately claim the stream in offscreen (streamId has ~5s TTL)
+    claimStreamInOffscreen(streamId).then(() => {
+      // Open side panel
+      chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+
+      // Broadcast capture info to sidepanel/popup
+      broadcastToRuntime({
+        action: 'TAB_CAPTURED',
+        capturedTabId: tab.id,
+        capturedTabTitle: capturedTabTitle,
+        streamId: streamId
+      });
+    }).catch(err => {
+      console.error('[SyncScribe AI] Failed to claim stream:', err);
+      clearCaptureState();
+      chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+    });
+  });
+}
+
+async function claimStreamInOffscreen(streamId) {
+  await ensureOffscreenDocument();
+  await waitForOffscreenReady();
+
+  const response = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({
+      action: 'CLAIM_STREAM',
+      target: 'offscreen',
+      streamId: streamId
+    }, resolve);
+  });
+
+  if (!response || !response.success) {
+    throw new Error(response?.error || 'Failed to claim audio stream in offscreen document.');
+  }
+}
+
+function clearCaptureState() {
+  pendingStreamId = null;
+  capturedTabId = null;
+  capturedTabTitle = null;
+  captureActive = false;
+}
+
+function broadcastToRuntime(msg) {
+  chrome.runtime.sendMessage(msg).catch(() => {});
+}
+
+// ── Helper to get all stored captions ───────────────────────────────────
 async function getCaptions() {
   const data = await chrome.storage.local.get(['syncscribe_captions']);
   return data.syncscribe_captions || [];
 }
 
-// Helper to save captions
 async function saveCaptions(captions) {
   await chrome.storage.local.set({ syncscribe_captions: captions });
 }
 
-// Listen to incoming runtime messages
+// ── Listen to incoming runtime messages ─────────────────────────────────
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Offscreen transcript relay
+  if (request.action === 'ENGINE_TRANSCRIPT') {
+    handleNewCaption({
+      id: Date.now() + Math.random().toString(36).substr(2, 4),
+      platform: 'Tab Audio STT',
+      speaker: request.speaker || 'Speaker',
+      text: request.text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      rawTime: Date.now()
+    });
+    return;
+  }
+
+  if (request.action === 'ENGINE_INTERIM') {
+    // Broadcast interim results to popup/sidepanel for live display
+    broadcastToRuntime({
+      action: 'INTERIM_TRANSCRIPT',
+      speaker: request.speaker || 'Speaker',
+      text: request.text
+    });
+    return;
+  }
+
   if (request.action === 'NEW_CAPTION') {
     handleNewCaption(request.payload);
+  } else if (request.action === 'CAPTION_UPDATED') {
+    // Relay from content.js DOM scraper
+    broadcastToRuntime({ action: 'CAPTION_UPDATED' });
   } else if (request.action === 'CLEAR_TRANSCRIPT') {
     saveCaptions([]).then(() => {
       sendResponse({ status: 'cleared' });
@@ -79,22 +210,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   } else if (request.action === 'START_LIVE_AUDIO_CAPTURE') {
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      if (!tabs || tabs.length === 0) {
-        sendResponse({ success: false, error: 'No active meeting tab found.' });
-        return;
-      }
-      try {
-        await startTabAudioCaptureForActiveTab(tabs[0].id);
-        sendResponse({ success: true, tabTitle: tabs[0].title });
-      } catch (err) {
-        sendResponse({ success: false, error: err.message });
-      }
-    });
+    // Called from popup/sidepanel after tab is already captured
+    handleStartLiveCapture(request).then(res => sendResponse(res)).catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   } else if (request.action === 'STOP_LIVE_AUDIO_CAPTURE') {
-    chrome.runtime.sendMessage({ action: 'STOP_TAB_CAPTURE', target: 'offscreen' }).catch(() => {});
+    chrome.runtime.sendMessage({ action: 'ENGINE_STOP', target: 'offscreen' }).catch(() => {});
+    captureActive = false;
     sendResponse({ success: true });
+    return true;
+  } else if (request.action === 'GET_CAPTURE_INFO') {
+    sendResponse({
+      hasPendingCapture: !!pendingStreamId,
+      capturedTabId,
+      capturedTabTitle,
+      captureActive
+    });
     return true;
   } else if (request.action === 'SEND_TO_WHATSAPP') {
     openWhatsAppRelay(request.text, request.phone)
@@ -114,7 +244,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Add caption to array with sentence smoothing & deduplication
+// ── Start live capture (uses already-claimed stream) ────────────────────
+async function handleStartLiveCapture(request) {
+  if (!pendingStreamId) {
+    // No stream captured yet — try to capture now (may fail without gesture)
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs || tabs.length === 0) {
+      throw new Error('No active tab found. Click the SyncScribe AI icon on a meeting tab first.');
+    }
+
+    // Try tabCapture (may fail without user gesture)
+    try {
+      const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabs[0].id });
+      if (streamId) {
+        pendingStreamId = streamId;
+        capturedTabId = tabs[0].id;
+        capturedTabTitle = tabs[0].title || 'Active Tab';
+        await claimStreamInOffscreen(streamId);
+      }
+    } catch (e) {
+      console.warn('[SyncScribe AI] tabCapture requires clicking the extension icon. Falling back to mic.', e.message);
+    }
+  }
+
+  await ensureOffscreenDocument();
+  await waitForOffscreenReady();
+
+  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
+  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
+
+  const response = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({
+      action: 'ENGINE_START',
+      target: 'offscreen',
+      streamId: pendingStreamId,
+      sttApiKey: settings.sttApiKey,
+      sttProvider: settings.sttProvider
+    }, resolve);
+  });
+
+  if (!response || !response.success) {
+    throw new Error(response?.error || 'Failed to start transcription engine.');
+  }
+
+  captureActive = true;
+  return { success: true, tabTitle: capturedTabTitle, method: response.method };
+}
+
+// ── Add caption to array with sentence smoothing & deduplication ────────
 async function handleNewCaption(captionEntry) {
   if (!captionEntry || !captionEntry.text || captionEntry.text.trim() === '') return;
   const cleanText = captionEntry.text.trim();
@@ -133,17 +310,14 @@ async function handleNewCaption(captionEntry) {
     await saveCaptions(captions);
   }
 
-  // Broadcast to open popup if active
-  chrome.runtime.sendMessage({
+  broadcastToRuntime({
     action: 'CAPTION_UPDATED',
     captionsCount: captions.length,
     latestCaption: captionEntry
-  }).catch(() => {
-    // Popup might not be open
   });
 }
 
-// Stage 1: Meta-Prompt Synthesizer
+// ── Stage 1: Meta-Prompt Synthesizer ────────────────────────────────────
 async function synthesizeMetaPrompt(fullTranscript, apiKey, model, baseHeaders) {
   console.log('[SyncScribe AI] Stage 1: Synthesizing Dynamic Meta-Prompt...');
   
@@ -178,7 +352,7 @@ Output ONLY the custom system prompt text itself. Do not include markdown code b
   return data.choices?.[0]?.message?.content || null;
 }
 
-// Standalone System Prompt Generator for Settings UI
+// ── Standalone System Prompt Generator for Settings UI ──────────────────
 async function handleSynthesizeSystemPrompt(overrideKey, overrideModel) {
   const captions = await getCaptions();
   if (captions.length === 0) {
@@ -210,7 +384,7 @@ async function handleSynthesizeSystemPrompt(overrideKey, overrideModel) {
   return prompt;
 }
 
-// Stage 2: Generate Summary using OpenRouter Models
+// ── Stage 2: Generate Summary using OpenRouter Models ───────────────────
 async function generateOpenRouterSummary(overrideKey, overrideModel, overrideSystemPrompt, overrideUseMetaPrompt) {
   const captions = await getCaptions();
   if (captions.length === 0) {
@@ -238,7 +412,6 @@ async function generateOpenRouterSummary(overrideKey, overrideModel, overrideSys
 
   let effectiveSystemPrompt = overrideSystemPrompt || settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
 
-  // Run Stage 1 Meta-Prompt Synthesis if enabled
   if (useMetaPrompt) {
     try {
       const synthesizedPrompt = await synthesizeMetaPrompt(fullTranscript, apiKey, model, headers);
@@ -287,7 +460,7 @@ async function generateOpenRouterSummary(overrideKey, overrideModel, overrideSys
   return summaryText;
 }
 
-// Relay: WhatsApp Web
+// ── Relay: WhatsApp Web ─────────────────────────────────────────────────
 async function openWhatsAppRelay(textSummary, overridePhone) {
   const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
   const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
@@ -306,7 +479,7 @@ async function openWhatsAppRelay(textSummary, overridePhone) {
   return true;
 }
 
-// Relay: Slack Webhook / Web Link
+// ── Relay: Slack Webhook / Web Link ─────────────────────────────────────
 async function sendSlackRelay(textSummary, overrideWebhook) {
   const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
   const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
@@ -321,13 +494,12 @@ async function sendSlackRelay(textSummary, overrideWebhook) {
     if (!response.ok) throw new Error(`Slack Webhook HTTP Error ${response.status}`);
     return { success: true, method: 'webhook' };
   } else {
-    // Fallback: Copy to clipboard and open Slack Web
     await chrome.tabs.create({ url: 'https://app.slack.com/' });
     return { success: true, method: 'tab' };
   }
 }
 
-// Relay: MS Teams Webhook / Web Link
+// ── Relay: MS Teams Webhook / Web Link ──────────────────────────────────
 async function sendTeamsRelay(textSummary, overrideWebhook) {
   const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
   const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
@@ -358,7 +530,7 @@ async function sendTeamsRelay(textSummary, overrideWebhook) {
   }
 }
 
-// Handle Audio File Speech-to-Text Transcription
+// ── Handle Audio File Speech-to-Text Transcription ──────────────────────
 async function handleTranscribeAudio(audioDataUrl, mimeType, fileName, customSttKey, customSttProvider) {
   const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
   const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
@@ -376,11 +548,10 @@ async function handleTranscribeAudio(audioDataUrl, mimeType, fileName, customStt
   }
 }
 
-// Deepgram Nova-2 Speech-to-Text with Speaker Diarization
+// ── Deepgram Nova-2 Speech-to-Text with Speaker Diarization ─────────────
 async function transcribeDeepgram(audioDataUrl, mimeType, apiKey, fileName) {
   console.log(`[SyncScribe AI] Sending audio file "${fileName}" to Deepgram Nova-2 API...`);
 
-  // Convert Base64 data URL to ArrayBuffer
   const base64Part = audioDataUrl.split(',')[1];
   const binaryString = atob(base64Part);
   const bytes = new Uint8Array(binaryString.length);
@@ -423,7 +594,6 @@ async function transcribeDeepgram(audioDataUrl, mimeType, apiKey, fileName) {
     })).filter(item => item.text !== '');
   }
 
-  // Fallback if utterances array is empty
   const alt = data.results?.channels?.[0]?.alternatives?.[0];
   if (alt && alt.transcript && alt.transcript.trim() !== '') {
     return [{
@@ -445,7 +615,7 @@ function formatSecondsToTime(seconds) {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
-// Ensure Offscreen Document exists for Tab Audio Capture
+// ── Ensure Offscreen Document exists ────────────────────────────────────
 async function ensureOffscreenDocument() {
   const existingContexts = await chrome.runtime.getContexts({
     contextTypes: ['OFFSCREEN_DOCUMENT']
@@ -455,11 +625,11 @@ async function ensureOffscreenDocument() {
   await chrome.offscreen.createDocument({
     url: 'offscreen.html',
     reasons: ['USER_MEDIA'],
-    justification: 'Tab audio capture and real-time speech-to-text transcribing'
+    justification: 'Tab audio capture and real-time speech-to-text transcription'
   });
 }
 
-function waitForOffscreenReady(maxWait = 4000) {
+function waitForOffscreenReady(maxWait = 5000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     function ping() {
@@ -479,49 +649,11 @@ function waitForOffscreenReady(maxWait = 4000) {
   });
 }
 
-async function startTabAudioCaptureForActiveTab(tabId) {
-  await ensureOffscreenDocument();
-  await waitForOffscreenReady();
-
-  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
-  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
-
-  let streamId = null;
-  try {
-    streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
-  } catch (e) {
-    console.warn('[SyncScribe AI] tabCapture stream occupied by another extension, falling back to mic/speech STT:', e.message);
+// ── Tab close auto-cleanup ──────────────────────────────────────────────
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId === capturedTabId) {
+    chrome.runtime.sendMessage({ action: 'ENGINE_STOP', target: 'offscreen' }).catch(() => {});
+    clearCaptureState();
+    broadcastToRuntime({ action: 'SESSION_ENDED', reason: 'tab_closed' });
   }
-
-  if (streamId) {
-    const response = await new Promise((resolve) => {
-      chrome.runtime.sendMessage({
-        action: 'START_TAB_CAPTURE',
-        target: 'offscreen',
-        streamId: streamId,
-        sttApiKey: settings.sttApiKey,
-        sttProvider: settings.sttProvider
-      }, resolve);
-    });
-
-    if (response && response.success) {
-      return { success: true, method: 'tabCapture' };
-    }
-  }
-
-  // Fallback to Microphone / Web Speech STT
-  const response = await new Promise((resolve) => {
-    chrome.runtime.sendMessage({
-      action: 'START_MIC_CAPTURE',
-      target: 'offscreen',
-      sttApiKey: settings.sttApiKey,
-      sttProvider: settings.sttProvider
-    }, resolve);
-  });
-
-  if (!response || !response.success) {
-    throw new Error(response?.error || 'Failed to initialize speech transcriber engine.');
-  }
-
-  return { success: true, method: 'mic' };
-}
+});

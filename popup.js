@@ -284,14 +284,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   toggleTabAudioBtn.addEventListener('click', async () => {
     if (!isAudioCapturing) {
       toggleTabAudioBtn.disabled = true;
-      toggleTabAudioBtn.innerText = '🎙️ Requesting Permission & Connecting...';
+      toggleTabAudioBtn.innerText = '🎙️ Starting Transcription...';
 
-      // Ensure extension origin has audio permission for Web Speech API
+      // Request mic permission from popup context (visible UI = Chrome will show prompt)
       try {
         const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         tempStream.getTracks().forEach(t => t.stop());
       } catch (permErr) {
-        console.warn('Audio permission prompt result:', permErr.message);
+        console.warn('Mic permission prompt result:', permErr.message);
+      }
+
+      // Check if we already have a captured tab stream
+      const captureInfo = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'GET_CAPTURE_INFO' }, resolve);
+      });
+
+      let statusMsg = '';
+      if (captureInfo && captureInfo.hasPendingCapture) {
+        statusMsg = `Tab audio captured from "${captureInfo.capturedTabTitle}". `;
+      } else {
+        statusMsg = 'No tab audio captured. Using microphone. Click the SyncScribe icon on a meeting tab to capture tab audio. ';
       }
 
       const response = await new Promise((resolve) => {
@@ -301,22 +313,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (response && response.success) {
         isAudioCapturing = true;
-        toggleTabAudioBtn.innerText = '⏹️ Stop Live Tab Audio Capture';
+        toggleTabAudioBtn.innerText = '⏹️ Stop Live Transcription';
         toggleTabAudioBtn.style.background = 'rgba(239, 68, 68, 0.25)';
         toggleTabAudioBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
         toggleTabAudioBtn.style.color = '#f87171';
-        showToast(`Capturing live tab audio from "${response.tabTitle || 'active tab'}"!`);
+        const methodLabel = response.method === 'webspeech' ? 'Web Speech API (Free)' : response.method === 'deepgram' ? 'Deepgram Nova-2' : response.method;
+        showToast(`${statusMsg}Transcribing via ${methodLabel}!`);
       } else {
-        showToast(response?.error || 'Failed to capture tab audio.', true);
+        showToast(response?.error || 'Failed to start transcription engine.', true);
       }
     } else {
       chrome.runtime.sendMessage({ action: 'STOP_LIVE_AUDIO_CAPTURE' });
       isAudioCapturing = false;
-      toggleTabAudioBtn.innerText = '🎙️ Capture Live Tab Audio (Direct Speech STT)';
+      toggleTabAudioBtn.innerText = '🎙️ Start Live Transcription (Free — No API Key)';
       toggleTabAudioBtn.style.background = 'rgba(236, 72, 153, 0.18)';
       toggleTabAudioBtn.style.borderColor = 'rgba(236, 72, 153, 0.5)';
       toggleTabAudioBtn.style.color = '#f472b6';
-      showToast('Live tab audio capture stopped.');
+      showToast('Live transcription stopped.');
     }
   });
 

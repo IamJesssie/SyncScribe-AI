@@ -2,24 +2,26 @@
   "manifest_version": 3,
   "name": "SyncScribe AI - Unlimited Meeting Transcriber & WhatsApp Relay",
   "short_name": "SyncScribe AI",
-  "version": "1.0.0",
-  "description": "Transcribes Google Meet, Zoom & Teams in real-time, generates AI summaries via OpenRouter, and relays to WhatsApp Web zero-backend.",
+  "version": "1.1.0",
+  "description": "Transcribes Google Meet, Zoom & Teams in real-time via tab audio capture, generates AI summaries via OpenRouter, and relays to WhatsApp Web zero-backend.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "SyncScribe AI Control Panel"
+    "default_title": "SyncScribe AI — Click to capture tab audio & open panel"
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
   },
   "content_scripts": [
     {
@@ -49,9 +51,6 @@
     "offscreen",
     "sidePanel"
   ],
-  "side_panel": {
-    "default_path": "popup.html"
-  },
   "host_permissions": [
     "https://meet.google.com/*",
     "https://*.zoom.us/*",
