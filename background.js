@@ -62,6 +62,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(summary => sendResponse({ success: true, summary }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
+  } else if (request.action === 'SYNTHESIZE_SYSTEM_PROMPT') {
+    handleSynthesizeSystemPrompt(request.customApiKey, request.customModel)
+      .then(prompt => sendResponse({ success: true, systemPrompt: prompt }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
   } else if (request.action === 'SEND_TO_WHATSAPP') {
     openWhatsAppRelay(request.text, request.phone)
       .then(res => sendResponse({ success: true }))
@@ -129,6 +134,38 @@ Output ONLY the custom system prompt text itself. Do not include markdown code b
   if (!response.ok) return null;
   const data = await response.json();
   return data.choices?.[0]?.message?.content || null;
+}
+
+// Standalone System Prompt Generator for Settings UI
+async function handleSynthesizeSystemPrompt(overrideKey, overrideModel) {
+  const captions = await getCaptions();
+  if (captions.length === 0) {
+    throw new Error('No transcript available to analyze. Please record or upload a transcript file first.');
+  }
+
+  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
+  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
+
+  const apiKey = overrideKey || settings.openRouterApiKey;
+  const model = overrideModel || settings.selectedModel || 'meta-llama/llama-3.3-70b-instruct:free';
+
+  const fullTranscript = captions.map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`).join('\n');
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'HTTP-Referer': 'https://github.com/SyncScribeAI',
+    'X-Title': 'SyncScribe AI Extension'
+  };
+
+  if (apiKey && apiKey.trim() !== '') {
+    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+  }
+
+  const prompt = await synthesizeMetaPrompt(fullTranscript, apiKey, model, headers);
+  if (!prompt) {
+    throw new Error('Failed to generate dynamic system prompt from OpenRouter.');
+  }
+  return prompt;
 }
 
 // Stage 2: Generate Summary using OpenRouter Models

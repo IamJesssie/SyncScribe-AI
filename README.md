@@ -88,20 +88,17 @@ git clone https://github.com/SyncScribeAI/SyncScribeAI.git
 
 ### 2. View Real-Time Transcript
 * Click the **SyncScribe AI** extension icon in your Chrome toolbar.
-* Watch real-time transcripts populate with timestamps and speaker tags (`[10:02 AM] Claudia: ...`).
+### 3. Generate & Preview AI Summary
+* Click **`⚡ Generate AI Summary Preview`**.
+* The extension analyzes your meeting transcript (using Auto-Meta Prompting or your Custom System Prompt) and switches to the **AI Summary** tab to display a live preview!
 
-### 3. Generate AI Summary & Send to WhatsApp
-* Click **Summarize & Send to WhatsApp**.
-* The extension calls OpenRouter AI to format a structured summary with:
-  * 📌 *Meeting Overview & Agenda*
-  * 🎯 *Key Decisions Made*
-  * ⚡ *Action Items & Next Steps*
-  * 👥 *Departmental Breakdown*
-* A new WhatsApp Web tab will open automatically with the formatted summary pre-filled in the text box. Simply press **Enter** to dispatch!
+### 4. Relay to WhatsApp, Slack, or Teams
+* Review your generated summary preview.
+* Click **`Send to WhatsApp`** (opens WhatsApp Web with pre-filled summary & group picker), **`Send to Slack`**, **`Send to Teams`**, or **`Copy Summary`**.
 
-### 4. Export Transcripts
-* Click **Download TXT** for raw text logs.
-* Click **Download PDF** to generate a clean, formatted PDF document with official meeting header styles.
+### 5. Export Transcripts & Files
+* Click **Upload Transcript File** (`.txt`, `.vtt`, `.srt`, `.json`) to load external transcripts.
+* Click **Download TXT** or **Download PDF** for local formatted exports.
 
 ---
 

@@ -26,9 +26,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Action Buttons
   const toggleRecordingBtn = document.getElementById('btn-toggle-recording');
-  const summarizeWhatsappBtn = document.getElementById('btn-summarize-whatsapp');
-  const summarizeSlackBtn = document.getElementById('btn-summarize-slack');
-  const summarizeTeamsBtn = document.getElementById('btn-summarize-teams');
+  const generateSystemPromptBtn = document.getElementById('btn-generate-systemprompt');
+  const generateSummaryBtn = document.getElementById('btn-generate-summary');
+  const dispatchWhatsappBtn = document.getElementById('btn-dispatch-whatsapp');
+  const dispatchSlackBtn = document.getElementById('btn-dispatch-slack');
+  const dispatchTeamsBtn = document.getElementById('btn-dispatch-teams');
+  const copySummaryBtn = document.getElementById('btn-copy-summary');
   const exportTxtBtn = document.getElementById('btn-export-txt');
   const exportPdfBtn = document.getElementById('btn-export-pdf');
   const clearTranscriptBtn = document.getElementById('btn-clear-transcript');
@@ -177,10 +180,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Helper to generate summary
+  // Action Button: Auto-Generate System Prompt from Active Transcript
+  generateSystemPromptBtn.addEventListener('click', async () => {
+    if (currentCaptions.length === 0) {
+      showToast('No transcript available to analyze! Record or upload a transcript file first.', true);
+      return;
+    }
+
+    try {
+      generateSystemPromptBtn.disabled = true;
+      generateSystemPromptBtn.innerText = '✨ Analyzing & Synthesizing Prompt...';
+      showToast('Analyzing transcript & synthesizing system prompt...');
+
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action: 'SYNTHESIZE_SYSTEM_PROMPT',
+          customApiKey: apiKeyInput.value.trim(),
+          customModel: modelSelect.value
+        }, resolve);
+      });
+
+      if (!response || !response.success) {
+        throw new Error(response?.error || 'Failed to synthesize system prompt.');
+      }
+
+      systemPromptInput.value = response.systemPrompt;
+
+      // Automatically save synthesized prompt in settings
+      const settings = {
+        openRouterApiKey: apiKeyInput.value.trim(),
+        selectedModel: modelSelect.value.trim() || 'meta-llama/llama-3.3-70b-instruct:free',
+        systemPrompt: response.systemPrompt,
+        useAutoMetaPrompt: autoMetaPromptCheckbox.checked,
+        targetPhone: phoneInput.value.trim(),
+        slackWebhookUrl: slackInput.value.trim(),
+        teamsWebhookUrl: teamsInput.value.trim()
+      };
+      await chrome.storage.local.set({ syncscribe_settings: settings });
+
+      showToast('Dynamic System Prompt generated & saved in Settings!');
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      generateSystemPromptBtn.disabled = false;
+      generateSystemPromptBtn.innerText = '✨ Auto-Generate Prompt from Transcript';
+    }
+  });
+
+  // Helper to generate summary preview
   async function generateSummary() {
     if (currentCaptions.length === 0) {
-      throw new Error('No transcript available to summarize!');
+      throw new Error('No transcript available to summarize! Record or upload text first.');
     }
 
     const aiResponse = await new Promise((resolve) => {
@@ -202,12 +252,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     return aiResponse.summary;
   }
 
-  // Action Button: Summarize & WhatsApp
-  summarizeWhatsappBtn.addEventListener('click', async () => {
+  // Action Button: Generate AI Summary Preview
+  generateSummaryBtn.addEventListener('click', async () => {
     try {
-      summarizeWhatsappBtn.disabled = true;
-      summarizeWhatsappBtn.innerHTML = `Generating AI Summary...`;
-      const summaryText = await generateSummary();
+      generateSummaryBtn.disabled = true;
+      generateSummaryBtn.innerHTML = `Generating AI Summary...`;
+      await generateSummary();
+      showToast('AI Summary preview generated! Review and click Send below.');
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      generateSummaryBtn.disabled = false;
+      generateSummaryBtn.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+        Generate AI Summary Preview
+      `;
+    }
+  });
+
+  // Dispatch Button: Send to WhatsApp Web
+  dispatchWhatsappBtn.addEventListener('click', async () => {
+    const summaryText = summaryContainer.innerText;
+    if (!summaryText || summaryText.includes('Click "Generate AI Summary Preview"')) {
+      showToast('Please generate an AI Summary Preview first!', true);
+      return;
+    }
+
+    try {
       showToast('Opening WhatsApp Web...');
       await new Promise((resolve) => {
         chrome.runtime.sendMessage({
@@ -218,23 +291,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     } catch (err) {
       showToast(err.message, true);
-    } finally {
-      summarizeWhatsappBtn.disabled = false;
-      summarizeWhatsappBtn.innerHTML = `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
-        </svg>
-        Summarize & Send to WhatsApp
-      `;
     }
   });
 
-  // Action Button: Send to Slack
-  summarizeSlackBtn.addEventListener('click', async () => {
+  // Dispatch Button: Send to Slack
+  dispatchSlackBtn.addEventListener('click', async () => {
+    const summaryText = summaryContainer.innerText;
+    if (!summaryText || summaryText.includes('Click "Generate AI Summary Preview"')) {
+      showToast('Please generate an AI Summary Preview first!', true);
+      return;
+    }
+
     try {
-      summarizeSlackBtn.disabled = true;
-      summarizeSlackBtn.innerHTML = `Generating...`;
-      const summaryText = await generateSummary();
       showToast('Relaying to Slack...');
       const res = await new Promise((resolve) => {
         chrome.runtime.sendMessage({
@@ -250,18 +318,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (err) {
       showToast(err.message, true);
-    } finally {
-      summarizeSlackBtn.disabled = false;
-      summarizeSlackBtn.innerHTML = `Send to Slack`;
     }
   });
 
-  // Action Button: Send to MS Teams
-  summarizeTeamsBtn.addEventListener('click', async () => {
+  // Dispatch Button: Send to MS Teams
+  dispatchTeamsBtn.addEventListener('click', async () => {
+    const summaryText = summaryContainer.innerText;
+    if (!summaryText || summaryText.includes('Click "Generate AI Summary Preview"')) {
+      showToast('Please generate an AI Summary Preview first!', true);
+      return;
+    }
+
     try {
-      summarizeTeamsBtn.disabled = true;
-      summarizeTeamsBtn.innerHTML = `Generating...`;
-      const summaryText = await generateSummary();
       showToast('Relaying to MS Teams...');
       const res = await new Promise((resolve) => {
         chrome.runtime.sendMessage({
@@ -277,10 +345,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (err) {
       showToast(err.message, true);
-    } finally {
-      summarizeTeamsBtn.disabled = false;
-      summarizeTeamsBtn.innerHTML = `Send to Teams`;
     }
+  });
+
+  // Action Button: Copy Summary
+  copySummaryBtn.addEventListener('click', () => {
+    const summaryText = summaryContainer.innerText;
+    if (!summaryText || summaryText.includes('Click "Generate AI Summary Preview"')) {
+      showToast('No summary content to copy!', true);
+      return;
+    }
+
+    navigator.clipboard.writeText(summaryText).then(() => {
+      showToast('Summary copied to clipboard!');
+    }).catch(() => {
+      showToast('Failed to copy to clipboard', true);
+    });
   });
 
   // Action Button: Download TXT
