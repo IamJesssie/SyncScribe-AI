@@ -400,6 +400,60 @@ async function handleSynthesizeSystemPrompt(overrideKey, overrideModel) {
   return prompt;
 }
 
+// ── OpenRouter API Fetcher with Automatic Model Fallback Chain ─────────
+async function fetchOpenRouterWithFallback(requestedModel, messages, headers, temperature = 0.3) {
+  const fallbackList = [
+    requestedModel,
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'google/gemini-2.0-flash-lite-preview-02-05:free',
+    'qwen/qwen-2.5-72b-instruct:free',
+    'deepseek/deepseek-r1:free',
+    'mistralai/mistral-small-24b-instruct-2501:free'
+  ];
+
+  const modelsToTry = Array.from(new Set(fallbackList.filter(m => m && m.trim().length > 0)));
+
+  let lastError = null;
+
+  for (const m of modelsToTry) {
+    try {
+      console.log(`[SyncScribe AI] Requesting OpenRouter Model: ${m}`);
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          model: m,
+          messages: messages,
+          temperature: temperature
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content && content.trim().length > 0) {
+          console.log(`[SyncScribe AI] Successfully received response from model: ${m}`);
+          return content;
+        }
+      } else {
+        const errText = await response.text();
+        let detail = errText;
+        try {
+          const jsonErr = JSON.parse(errText);
+          detail = jsonErr.error?.message || errText;
+        } catch (e) {}
+        console.warn(`[SyncScribe AI] Model ${m} failed (${response.status}): ${detail}`);
+        lastError = new Error(`OpenRouter Error (${response.status}): ${detail}`);
+      }
+    } catch (e) {
+      console.warn(`[SyncScribe AI] Network exception trying model ${m}:`, e.message);
+      lastError = e;
+    }
+  }
+
+  throw lastError || new Error('All OpenRouter AI free models are currently busy or unavailable. Please try again in a few seconds or enter an OpenRouter API key in Settings.');
+}
+
 // ── AI Copilot Real-Time Q&A Handler ────────────────────────────────────
 async function handleAskAiCopilot(question, overrideKey, overrideModel) {
   const captions = await getCaptions();
@@ -420,8 +474,9 @@ Analyze the meeting transcript below and provide a concise, direct, highly profe
 
 Guidelines:
 1. If the user asks "What should I answer right now?", analyze what HR, the host, or speaker recently asked, and craft a clear, confident, professional response for the user to speak immediately.
-2. Highlight key technical details, clinical rules, dates, or deadlines mentioned.
-3. Be concise and direct (2-4 bullet points max) so the user can quickly scan the answer during a live meeting.`;
+2. If the user asks for suggested questions, generate 3-5 smart, highly relevant questions they can ask the host, HR, or client speakers right now.
+3. Highlight key technical details, clinical rules, dates, or deadlines mentioned.
+4. Be concise and direct (2-4 bullet points max) so the user can quickly scan the answer during a live meeting.`;
 
   const headers = {
     'Content-Type': 'application/json',
@@ -433,36 +488,12 @@ Guidelines:
     headers['Authorization'] = `Bearer ${apiKey.trim()}`;
   }
 
-  const requestBody = {
-    model: model,
-    messages: [
-      { role: 'system', content: systemInstruction },
-      { role: 'user', content: `MEETING TRANSCRIPT:\n${fullTranscript}\n\nUSER QUESTION: ${question}` }
-    ],
-    temperature: 0.3
-  };
+  const messages = [
+    { role: 'system', content: systemInstruction },
+    { role: 'user', content: `MEETING TRANSCRIPT:\n${fullTranscript}\n\nUSER QUESTION: ${question}` }
+  ];
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: headers,
-    body: JSON.stringify(requestBody)
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    let errDetail = errText;
-    try {
-      const errJson = JSON.parse(errText);
-      errDetail = errJson.error?.message || errText;
-    } catch (e) {}
-    throw new Error(`AI Copilot Error (${response.status}): ${errDetail}`);
-  }
-
-  const data = await response.json();
-  const answer = data.choices?.[0]?.message?.content;
-  if (!answer) throw new Error('Received empty response from AI Copilot.');
-
-  return answer;
+  return await fetchOpenRouterWithFallback(model, messages, headers, 0.3);
 }
 
 // ── Stage 2: Generate Summary using OpenRouter Models ───────────────────
@@ -505,40 +536,12 @@ async function generateOpenRouterSummary(overrideKey, overrideModel, overrideSys
     }
   }
 
-  console.log(`[SyncScribe AI] Stage 2: Generating Summary with Model: ${model}`);
+  const messages = [
+    { role: 'system', content: effectiveSystemPrompt },
+    { role: 'user', content: `Here is the meeting transcript:\n\n${fullTranscript}` }
+  ];
 
-  const requestBody = {
-    model: model,
-    messages: [
-      { role: 'system', content: effectiveSystemPrompt },
-      { role: 'user', content: `Here is the meeting transcript:\n\n${fullTranscript}` }
-    ],
-    temperature: 0.4
-  };
-
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: headers,
-    body: JSON.stringify(requestBody)
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let parsedMsg = errorText;
-    try {
-      const errJson = JSON.parse(errorText);
-      parsedMsg = errJson.error?.message || errorText;
-    } catch (e) {}
-    throw new Error(`OpenRouter API Error (${response.status}): ${parsedMsg}`);
-  }
-
-  const data = await response.json();
-  const summaryText = data.choices?.[0]?.message?.content;
-  if (!summaryText) {
-    throw new Error('Received an empty response from OpenRouter AI.');
-  }
-
-  return summaryText;
+  return await fetchOpenRouterWithFallback(model, messages, headers, 0.4);
 }
 
 // ── Relay: WhatsApp Web ─────────────────────────────────────────────────

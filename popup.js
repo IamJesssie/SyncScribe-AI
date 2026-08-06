@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const copilotInputQuestion = document.getElementById('copilot-input-question');
   const btnAskCopilot = document.getElementById('btn-ask-copilot');
   const pillAnswerNow = document.getElementById('pill-answer-now');
+  const pillSuggestQuestions = document.getElementById('pill-suggest-questions');
   const pillRecentSummary = document.getElementById('pill-recent-summary');
   const pillExplainTerms = document.getElementById('pill-explain-terms');
   const pillCebuTasks = document.getElementById('pill-cebu-tasks');
@@ -336,6 +337,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     pillAnswerNow.addEventListener('click', () => {
       if (copilotInputQuestion) copilotInputQuestion.value = 'What answer should I give HR or the speaker right now?';
       askAiCopilot('What answer should I give HR or the speaker right now? Provide a clear, confident, professional response for me to speak immediately.');
+    });
+  }
+
+  if (pillSuggestQuestions) {
+    pillSuggestQuestions.addEventListener('click', () => {
+      if (copilotInputQuestion) copilotInputQuestion.value = 'Suggest 3-5 smart questions I can ask during this meeting.';
+      askAiCopilot('Based on the meeting transcript so far, suggest 3-5 smart, highly relevant questions that I (as a software engineer or clinical reviewer) can ask the host, HR, or speakers right now.');
     });
   }
 
