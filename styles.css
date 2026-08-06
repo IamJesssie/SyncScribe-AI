@@ -401,6 +401,12 @@ body {
   transition: border-color 0.2s ease;
 }
 
+textarea.form-input {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.45;
+}
+
 .form-input:focus, .form-select:focus {
   border-color: var(--accent-purple);
   box-shadow: 0 0 10px rgba(168, 85, 247, 0.2);

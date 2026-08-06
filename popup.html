@@ -122,9 +122,15 @@ Click "Summarize & Send to WhatsApp" below to generate a structured AI executive
     </div>
 
     <div class="form-group">
+      <label class="form-label" for="setting-systemprompt">Custom AI System Prompt</label>
+      <textarea class="form-input" id="setting-systemprompt" rows="4" placeholder="You are SyncScribe AI... Customize persona, structure, formatting, or language rules."></textarea>
+      <div class="form-hint">Controls how the AI formats your WhatsApp summary (personas, bolding, bullet rules)</div>
+    </div>
+
+    <div class="form-group">
       <label class="form-label" for="setting-phone">Target WhatsApp Phone Number (Optional)</label>
       <input type="text" class="form-input" id="setting-phone" placeholder="+1234567890">
-      <div class="form-hint">Includes international country code (e.g. +62812345678)</div>
+      <div class="form-hint">Leave BLANK to send to ANY WhatsApp Group Chat! Include country code for direct user chat (+628123...)</div>
     </div>
 
     <button class="btn-secondary" id="btn-save-settings" style="width: 100%; justify-content: center;">

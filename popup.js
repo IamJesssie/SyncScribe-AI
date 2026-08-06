@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Form Elements
   const apiKeyInput = document.getElementById('setting-apikey');
   const modelSelect = document.getElementById('setting-model');
+  const systemPromptInput = document.getElementById('setting-systemprompt');
   const phoneInput = document.getElementById('setting-phone');
   const saveSettingsBtn = document.getElementById('btn-save-settings');
 
@@ -69,6 +70,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const s = data.syncscribe_settings;
       if (s.openRouterApiKey) apiKeyInput.value = s.openRouterApiKey;
       if (s.selectedModel) modelSelect.value = s.selectedModel;
+      if (s.systemPrompt) systemPromptInput.value = s.systemPrompt;
       if (s.targetPhone) phoneInput.value = s.targetPhone;
     }
   }
@@ -79,6 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const settings = {
       openRouterApiKey: apiKeyInput.value.trim(),
       selectedModel: modelVal,
+      systemPrompt: systemPromptInput.value.trim(),
       targetPhone: phoneInput.value.trim()
     };
     await chrome.storage.local.set({ syncscribe_settings: settings });
@@ -186,7 +189,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         chrome.runtime.sendMessage({
           action: 'GENERATE_AI_SUMMARY',
           customApiKey: apiKeyInput.value.trim(),
-          customModel: modelSelect.value
+          customModel: modelSelect.value,
+          customSystemPrompt: systemPromptInput.value.trim()
         }, resolve);
       });
 

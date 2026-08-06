@@ -104,9 +104,21 @@ git clone https://github.com/SyncScribeAI/SyncScribeAI.git
 
 ---
 
-## ⚙️ OpenRouter API & Manual Model Selection
+## ⚙️ Extension Settings & Customization
 
-SyncScribe AI gives you **100% full control** over which OpenRouter model processes your transcripts. In the **Settings** tab, you can enter any valid OpenRouter model string manually, or select from built-in suggestions:
+### 💬 WhatsApp Group Chat Relay (No n8n / Automation Required)
+* **Send to ANY WhatsApp Group:** Leave the `Target WhatsApp Phone Number` setting **BLANK**.
+* When you click **Summarize & Send to WhatsApp**, WhatsApp Web opens with the **"Share to Contact or Group"** selection modal.
+* Pick any group chat (e.g. *Engineering Team*, *Project Alpha*), and SyncScribe AI automatically pre-fills your summary into that group chat box ready to send!
+* *(Optional)* Enter an international phone number (e.g. `+62812345678`) to send directly to an individual user chat.
+
+### 🧠 Custom AI System Prompt
+You can fully customize how the AI analyzes and formats your meeting summaries inside the **Settings** panel:
+* Define custom personas, target languages, formatting guidelines, or bullet point rules.
+* **Persistent Storage:** Your custom system prompt is saved locally in Chrome storage and loaded automatically every time.
+
+### 🤖 OpenRouter AI Model Selection
+SyncScribe AI gives you **100% full control** over which OpenRouter model processes your transcripts. Enter any valid OpenRouter model string manually, or select from built-in suggestions:
 
 | Suggested Model | Provider | Type |
 | :--- | :--- | :--- |
@@ -119,8 +131,6 @@ SyncScribe AI gives you **100% full control** over which OpenRouter model proces
 | `anthropic/claude-3.5-sonnet` | Anthropic | Paid |
 
 *Simply paste or type any model ID from [OpenRouter Models](https://openrouter.ai/models) into the model setting field!*
-
-*An optional OpenRouter API Key can be entered in settings for higher rate limits.*
 
 ---
 

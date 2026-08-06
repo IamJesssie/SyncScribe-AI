@@ -1,90 +1,106 @@
-# Implementation Plan: SyncScribe AI 🚀
-### *Unlimited Meeting Transcriber & Instant WhatsApp Relay (Zero-Backend Architecture)*
+# Implementation Plan: WhatsApp Group Relay & Custom AI System Prompt 🚀
 
-This document details the updated blueprint for **SyncScribe AI** — a 100% serverless, open-source Chrome Extension that transcribes Google Meet, Zoom Web, and MS Teams in real time, generates AI summaries using OpenRouter free models, and relays summaries directly to WhatsApp Web **without requiring any local server, node processes, or cloud hosting**.
+This document details the blueprint for implementing:
+1. **Zero-Backend WhatsApp Group Chat Relay Strategy** (Explaining how SyncScribe AI relays to WhatsApp Groups without n8n or servers).
+2. **Custom AI System Prompt Input & Storage** (Allowing users to customize, save, and persist system prompts used during OpenRouter AI summarization).
 
 ---
 
-## 1. Zero-Backend Architecture Overview
+## 1. Zero-Backend WhatsApp Group Chat Strategy (No n8n / Automation Platform)
 
-By leveraging Chrome Extension APIs and direct WhatsApp Web deep-linking, **SyncScribe AI** operates with **zero server infrastructure**:
+### Context & Challenge:
+WhatsApp does not provide a free, serverless API for bot injection into group chats without WhatsApp Business API / Twilio / Meta Cloud API (which require servers and paid subscriptions).
+
+### Solution: Direct WhatsApp Web Deep-Linking & Smart Group Relay
+Without any backend or n8n, **SyncScribe AI** achieves 100% free group chat relay via Chrome Extension deep-linking:
 
 ```
-┌───────────────────────────────────┐      ┌───────────────────────────────────┐      ┌───────────────────────────────────┐
-│ Chrome Extension (SyncScribe AI)  │ ───► │ OpenRouter AI API                 │ ───► │ WhatsApp Web Tab                  │
-│ Captures Live Captions & Speakers │      │ (Free Models generate summary)    │      │ (Pre-filled summary ready to send)│
-└───────────────────────────────────┘      └───────────────────────────────────┘      └───────────────────────────────────┘
+┌──────────────────────────────────────┐
+│  Chrome Extension (SyncScribe AI)    │
+│  Generates AI Summary via OpenRouter │
+└──────────────────┬───────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────┐
+│      WhatsApp Web Contact / Group    │
+│            Selection Picker          │
+│   https://web.whatsapp.com/send?text │
+└──────────────────┬───────────────────┘
+                   │ User selects target Group
+                   ▼
+┌──────────────────────────────────────┐
+│      Target WhatsApp Group Chat      │
+│  Pre-filled summary ready in group   │
+│  input box (Click Enter to send)     │
+└──────────────────────────────────────┘
 ```
 
-### Why this architecture is ideal:
-* 🟢 **No Localhost Required:** You never need to run terminal commands (`npm start` or Node.js) during meetings.
-* 🟢 **100% Free & Serverless:** Zero hosting fees, zero server maintenance, zero API token costs (using OpenRouter free models).
-* 🟢 **Maximum Privacy & Control:** Your data stays in your browser and your own WhatsApp account session.
+1. **Group Picker Mode (No Phone Number):** When `Target WhatsApp Phone Number` is left blank in Settings, the extension opens `https://web.whatsapp.com/send?text=ENCODED_SUMMARY`. WhatsApp Web automatically presents a **"Share to Contact or Group"** picker modal. The user selects any group chat (e.g. *Engineering Team*, *Project Alpha*), and the summary is injected into that group's chat input box.
+2. **Direct Group Chat Auto-Focus:** `whatsapp_content.js` detects when WhatsApp Web loads with pre-filled text, focuses the active group chat input box, and displays a floating notification: `"SyncScribe AI: Summary ready in Group Chat! Press Enter to send."`
 
 ---
 
-## 2. Project Directory Structure (`SyncScribe-AI`)
+## 2. Proposed Code Changes
 
-```
-SyncScribe-AI/
-├── manifest.json              # Chrome Extension Manifest V3
-├── popup.html                 # Glassmorphism Dashboard & Control Panel UI
-├── popup.js                   # Extension UI Controller & OpenRouter Handler
-├── content.js                 # Universal DOM Caption Scraper (Meet, Zoom, Teams)
-├── background.js              # State manager & WhatsApp Web deep-link launcher
-├── pdf_export.js              # PDF & TXT document exporter library
-├── styles.css                 # Modern dark-mode glassmorphism styling
-├── icons/                     # Extension branding icons
-├── .gitignore
-├── LICENSE (MIT)
-└── README.md                  # Comprehensive GitHub documentation & usage guide
-```
+### Component 1: Extension UI (`popup.html` & `styles.css`)
+Add a new **Custom System Prompt** textarea in the Settings panel of `popup.html`, allowing users to define specific persona, format rules, or prompt guidelines.
+
+#### [MODIFY] `popup.html`
+- Add System Prompt textarea field with default placeholder & hint.
+
+#### [MODIFY] `styles.css`
+- Ensure textareas in the settings panel have sleek dark glassmorphism styling, resize handles, and smooth scrollbars.
 
 ---
 
-## 3. Extension User Interface (UI) Design
+### Component 2: UI Controller & Storage (`popup.js`)
+- Bind `setting-systemprompt` DOM element.
+- Load stored system prompt from `chrome.storage.local` (defaulting to structured WhatsApp template if unset).
+- Save `systemPrompt` when the user clicks **Save Preferences**.
+- Pass user's system prompt during OpenRouter summary generation.
 
-### Modern Glassmorphism Dashboard (`popup.html`):
-* 🟢 **Live Status Banner:** Displays real-time recording state, meeting platform, and captured sentence count.
-* 📜 **Live Transcript View:** Scrollable preview showing real-time timestamps and speaker names (e.g., `[10:02 AM] Claudia: ...`).
-* 📄 **Instant Export Actions:**
-  * 📄 `Download TXT` (One-click plain text transcript export)
-  * 📕 `Download PDF` (Formatted PDF export via client-side jsPDF)
-  * 🚀 `Summarize & Send to WhatsApp` (Generates OpenRouter AI summary and opens WhatsApp Web pre-filled)
-* ⚙️ **Settings Panel:**
-  * Save OpenRouter API Key (Supports free models: `meta-llama/llama-3.3-70b-instruct:free`, `google/gemini-2.0-flash-lite-preview-02-05:free`, `deepseek/deepseek-r1:free`).
-  * Target WhatsApp Chat / Phone Number (Optional pre-fill).
+#### [MODIFY] `popup.js`
+- Include `systemPrompt` in `loadSettings()` and `btn-save-settings` event handler.
 
 ---
 
-## 4. How the Zero-Backend WhatsApp Relay Works
+### Component 3: Background Worker & AI API (`background.js`)
+- Read saved `systemPrompt` from `chrome.storage.local` inside `generateOpenRouterSummary()`.
+- Use custom system prompt in the payload sent to OpenRouter API:
+  ```json
+  {
+    "model": "meta-llama/llama-3.3-70b-instruct:free",
+    "messages": [
+      { "role": "system", "content": "USER_CUSTOM_SYSTEM_PROMPT" },
+      { "role": "user", "content": "Transcript text..." }
+    ]
+  }
+  ```
 
-1. **Step 1 (Summarize):** When the user clicks **Summarize & Send to WhatsApp**, `background.js` retrieves the live transcript from `chrome.storage.local`.
-2. **Step 2 (AI Generation):** `background.js` sends the transcript to OpenRouter free API endpoint, formatting a structured summary with WhatsApp bolding (`*text*`), bullet points, and team section headers (Software Engineering & Clinical Reviewers).
-3. **Step 3 (WhatsApp Launch):** The extension opens a new tab to:
-   `https://web.whatsapp.com/send?text=ENCODED_SUMMARY_TEXT`
-   * If a target phone number is saved in settings, it opens `https://web.whatsapp.com/send?phone=NUMBER&text=ENCODED_SUMMARY_TEXT`.
-4. **Step 4 (Dispatch):** WhatsApp Web opens with the formatted summary pre-filled in the text box. The user simply presses **Enter** (or an injected content script on WhatsApp Web auto-triggers the send button).
-
----
-
-## 5. Implementation & GitHub Push Plan
-
-### Steps to Build:
-1. Create project folder `SyncScribe-AI`.
-2. Implement `manifest.json` (Manifest V3).
-3. Implement `content.js` (DOM caption observer for Google Meet, Zoom Web, MS Teams).
-4. Implement `background.js` & `popup.js` (OpenRouter integration, storage, WhatsApp link builder).
-5. Implement `popup.html` & `styles.css` (Glassmorphism dark UI).
-6. Implement `pdf_export.js` (TXT & PDF exports).
-7. Create `README.md` & GitHub initial commit.
+#### [MODIFY] `background.js`
+- Update `DEFAULT_SETTINGS` object to include default system prompt string.
+- Update `generateOpenRouterSummary()` to prioritize user-configured system prompt.
 
 ---
 
-## Verification Plan
+### Component 4: Documentation (`README.md`)
+- Document the WhatsApp Group relay workflow and Custom System Prompt configuration.
+
+#### [MODIFY] `README.md`
+
+---
+
+## 3. Verification Plan
 
 ### Manual Verification
-1. **Load Extension:** Load `SyncScribe-AI` folder in Chrome (`chrome://extensions` -> Developer Mode -> Load Unpacked).
-2. **Test OpenRouter Summary:** Verify OpenRouter free model returns structured markdown summary.
-3. **Test WhatsApp Web Direct Launch:** Confirm WhatsApp Web tab opens with pre-filled summary text formatted with `*bolding*` and emojis.
-4. **Test Export Capabilities:** Confirm `.txt` and `.pdf` files download cleanly.
+1. **Test Custom System Prompt Persistence:**
+   - Open Extension -> Settings tab.
+   - Modify System Prompt (e.g., change to `"Summarize in 3 short bullet points with high urgency"`).
+   - Click **Save Preferences**. Close & reopen extension to verify prompt persists.
+2. **Test OpenRouter Generation with Custom Prompt:**
+   - Click **Summarize & Send to WhatsApp**.
+   - Verify generated summary in the AI Summary tab adheres to the customized system prompt instructions.
+3. **Test WhatsApp Group Relay:**
+   - Leave `Target Phone Number` blank in settings.
+   - Click **Summarize & Send to WhatsApp**.
+   - Verify WhatsApp Web opens with the group/contact selector or pre-filled message ready in the selected group chat.

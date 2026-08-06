@@ -3,9 +3,22 @@
  * Handles transcript storage, OpenRouter AI summarization, and WhatsApp deep-linking
  */
 
+const DEFAULT_SYSTEM_PROMPT = `You are SyncScribe AI, an expert meeting note taker. Your task is to analyze the following live meeting transcript and produce a clean, structured summary optimized for WhatsApp messaging.
+
+Strict WhatsApp Formatting Rules:
+1. Use single asterisks for bold headers and key terms (e.g. *Meeting Executive Summary*).
+2. Use bullet points with emojis (📌, 🎯, 🚀, 💡, ⚡, 👥).
+3. Section Headers to include:
+   - 📌 *Meeting Overview & Agenda*
+   - 🎯 *Key Decisions Made*
+   - ⚡ *Action Items & Next Steps* (Assign to specific team members if mentioned)
+   - 👥 *Departmental Breakdown* (Software Engineering & Clinical / Business Reviewers)
+4. Keep the summary concise, actionable, and visually clear for easy reading on mobile WhatsApp screens.`;
+
 const DEFAULT_SETTINGS = {
   openRouterApiKey: '',
   selectedModel: 'meta-llama/llama-3.3-70b-instruct:free',
+  systemPrompt: DEFAULT_SYSTEM_PROMPT,
   targetPhone: '',
   autoOpenWhatsApp: true
 };
@@ -43,7 +56,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   } else if (request.action === 'GENERATE_AI_SUMMARY') {
-    generateOpenRouterSummary(request.customApiKey, request.customModel)
+    generateOpenRouterSummary(request.customApiKey, request.customModel, request.customSystemPrompt)
       .then(summary => sendResponse({ success: true, summary }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
@@ -72,10 +85,10 @@ async function handleNewCaption(captionEntry) {
 }
 
 // Generate Summary using OpenRouter Free Models
-async function generateOpenRouterSummary(overrideKey, overrideModel) {
+async function generateOpenRouterSummary(overrideKey, overrideModel, overrideSystemPrompt) {
   const captions = await getCaptions();
   if (captions.length === 0) {
-    throw new Error('No transcript data captured yet. Please record some meeting text first.');
+    throw new Error('No transcript data captured yet. Please record or upload transcript text first.');
   }
 
   const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
@@ -83,26 +96,15 @@ async function generateOpenRouterSummary(overrideKey, overrideModel) {
 
   const apiKey = overrideKey || settings.openRouterApiKey;
   const model = overrideModel || settings.selectedModel || 'meta-llama/llama-3.3-70b-instruct:free';
+  const effectiveSystemPrompt = overrideSystemPrompt || settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
 
   // Format transcript plain text
   const fullTranscript = captions.map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`).join('\n');
 
-  const systemPrompt = `You are SyncScribe AI, an expert meeting note taker. Your task is to analyze the following live meeting transcript and produce a clean, structured summary optimized for WhatsApp messaging.
-
-Strict WhatsApp Formatting Rules:
-1. Use single asterisks for bold headers and key terms (e.g. *Meeting Executive Summary*).
-2. Use bullet points with emojis (📌, 🎯, 🚀, 💡, ⚡, 👥).
-3. Section Headers to include:
-   - 📌 *Meeting Overview & Agenda*
-   - 🎯 *Key Decisions Made*
-   - ⚡ *Action Items & Next Steps* (Assign to specific team members if mentioned)
-   - 👥 *Departmental Breakdown* (Software Engineering & Clinical / Business Reviewers)
-4. Keep the summary concise, actionable, and visually clear for easy reading on mobile WhatsApp screens.`;
-
   const requestBody = {
     model: model,
     messages: [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: effectiveSystemPrompt },
       { role: 'user', content: `Here is the meeting transcript:\n\n${fullTranscript}` }
     ],
     temperature: 0.4
