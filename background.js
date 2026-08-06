@@ -74,6 +74,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(items => sendResponse({ success: true, captions: items }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
+  } else if (request.action === 'START_LIVE_AUDIO_CAPTURE') {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      if (!tabs || tabs.length === 0) {
+        sendResponse({ success: false, error: 'No active meeting tab found.' });
+        return;
+      }
+      try {
+        await startTabAudioCaptureForActiveTab(tabs[0].id);
+        sendResponse({ success: true, tabTitle: tabs[0].title });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    });
+    return true;
+  } else if (request.action === 'STOP_LIVE_AUDIO_CAPTURE') {
+    chrome.runtime.sendMessage({ action: 'STOP_TAB_CAPTURE', target: 'offscreen' }).catch(() => {});
+    sendResponse({ success: true });
+    return true;
   } else if (request.action === 'SEND_TO_WHATSAPP') {
     openWhatsAppRelay(request.text, request.phone)
       .then(res => sendResponse({ success: true }))
@@ -408,4 +426,65 @@ function formatSecondsToTime(seconds) {
   const mins = Math.floor(secNum / 60);
   const secs = secNum % 60;
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Ensure Offscreen Document exists for Tab Audio Capture
+async function ensureOffscreenDocument() {
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT']
+  });
+  if (existingContexts.length > 0) return;
+
+  await chrome.offscreen.createDocument({
+    url: 'offscreen.html',
+    reasons: ['USER_MEDIA'],
+    justification: 'Tab audio capture and real-time speech-to-text transcribing'
+  });
+}
+
+function waitForOffscreenReady(maxWait = 4000) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    function ping() {
+      if (Date.now() - start > maxWait) {
+        reject(new Error('Offscreen document ready timeout'));
+        return;
+      }
+      chrome.runtime.sendMessage({ action: 'OFFSCREEN_PING', target: 'offscreen' }, (resp) => {
+        if (chrome.runtime.lastError || !resp?.ready) {
+          setTimeout(ping, 100);
+        } else {
+          resolve();
+        }
+      });
+    }
+    ping();
+  });
+}
+
+async function startTabAudioCaptureForActiveTab(tabId) {
+  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+  if (!streamId) throw new Error('Failed to get tab capture stream ID.');
+
+  await ensureOffscreenDocument();
+  await waitForOffscreenReady();
+
+  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
+  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
+
+  const response = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({
+      action: 'START_TAB_CAPTURE',
+      target: 'offscreen',
+      streamId: streamId,
+      sttApiKey: settings.sttApiKey,
+      sttProvider: settings.sttProvider
+    }, resolve);
+  });
+
+  if (!response || !response.success) {
+    throw new Error(response?.error || 'Offscreen failed to start tab audio capture.');
+  }
+
+  return true;
 }

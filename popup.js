@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Action Buttons
   const toggleRecordingBtn = document.getElementById('btn-toggle-recording');
+  const toggleTabAudioBtn = document.getElementById('btn-toggle-tab-audio');
   const generateSystemPromptBtn = document.getElementById('btn-generate-systemprompt');
   const generateSummaryBtn = document.getElementById('btn-generate-summary');
   const dispatchWhatsappBtn = document.getElementById('btn-dispatch-whatsapp');
@@ -42,6 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let currentCaptions = [];
   let isRecording = true;
+  let isAudioCapturing = false;
 
   // Toast System
   function showToast(message, isError = false) {
@@ -275,6 +277,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         </svg>
         Generate AI Summary Preview
       `;
+    }
+  });
+
+  // Action Button: Toggle Live Tab Audio Capture (Direct STT)
+  toggleTabAudioBtn.addEventListener('click', async () => {
+    if (!isAudioCapturing) {
+      toggleTabAudioBtn.disabled = true;
+      toggleTabAudioBtn.innerText = '🎙️ Connecting Tab Audio...';
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'START_LIVE_AUDIO_CAPTURE' }, resolve);
+      });
+      toggleTabAudioBtn.disabled = false;
+
+      if (response && response.success) {
+        isAudioCapturing = true;
+        toggleTabAudioBtn.innerText = '⏹️ Stop Live Tab Audio Capture';
+        toggleTabAudioBtn.style.background = 'rgba(239, 68, 68, 0.25)';
+        toggleTabAudioBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+        toggleTabAudioBtn.style.color = '#f87171';
+        showToast(`Capturing live tab audio from "${response.tabTitle || 'active tab'}"!`);
+      } else {
+        showToast(response?.error || 'Failed to capture tab audio.', true);
+      }
+    } else {
+      chrome.runtime.sendMessage({ action: 'STOP_LIVE_AUDIO_CAPTURE' });
+      isAudioCapturing = false;
+      toggleTabAudioBtn.innerText = '🎙️ Capture Live Tab Audio (Direct Speech STT)';
+      toggleTabAudioBtn.style.background = 'rgba(236, 72, 153, 0.18)';
+      toggleTabAudioBtn.style.borderColor = 'rgba(236, 72, 153, 0.5)';
+      toggleTabAudioBtn.style.color = '#f472b6';
+      showToast('Live tab audio capture stopped.');
     }
   });
 

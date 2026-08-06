@@ -44,7 +44,9 @@
     "storage",
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "tabCapture",
+    "offscreen"
   ],
   "host_permissions": [
     "https://meet.google.com/*",
@@ -52,6 +54,7 @@
     "https://teams.microsoft.com/*",
     "https://teams.live.com/*",
     "https://web.whatsapp.com/*",
-    "https://openrouter.ai/api/*"
+    "https://openrouter.ai/api/*",
+    "https://api.deepgram.com/*"
   ]
 }
