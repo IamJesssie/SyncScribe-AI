@@ -390,13 +390,9 @@ async function handleNewCaption(newCap) {
 
 // ── Model Alias & Fuzzy Matching Dictionary ───────────────────────────
 const MODEL_ALIASES = {
-  'ling': 'inclusionai/ling-3.0-flash',
-  'ling-3.0': 'inclusionai/ling-3.0-flash',
-  'ling-3.0-flash': 'inclusionai/ling-3.0-flash',
-  'ling-3.0-tiny': 'inclusionai/ling-3.0-flash',
-  'ling-tiny': 'inclusionai/ling-3.0-flash',
-  'inclusionai/ling-3.0-tiny': 'inclusionai/ling-3.0-flash',
-  'inclusionai/ling-3.0-tiny:free': 'inclusionai/ling-3.0-flash',
+  'ling': 'inclusionai/ling-3.0-tiny:free',
+  'ling-tiny': 'inclusionai/ling-3.0-tiny:free',
+  'ling-flash': 'inclusionai/ling-3.0-flash',
   'llama': 'meta-llama/llama-3.3-70b-instruct:free',
   'llama-3.3': 'meta-llama/llama-3.3-70b-instruct:free',
   'gemini': 'google/gemini-2.0-flash-lite-preview-02-05:free',
@@ -405,16 +401,18 @@ const MODEL_ALIASES = {
 };
 
 function normalizeModelSlug(userSlug) {
-  if (!userSlug) return 'inclusionai/ling-3.0-flash';
-  const clean = userSlug.trim().toLowerCase();
-  if (MODEL_ALIASES[clean]) return MODEL_ALIASES[clean];
-  return userSlug.trim();
+  if (!userSlug) return 'inclusionai/ling-3.0-tiny:free';
+  const clean = userSlug.trim();
+  const cleanLower = clean.toLowerCase();
+  if (MODEL_ALIASES[cleanLower]) return MODEL_ALIASES[cleanLower];
+  return clean;
 }
 
 // ── Model Fallback Array ────────────────────────────────────────────────
 const FREE_MODEL_FALLBACKS = [
+  'inclusionai/ling-3.0-tiny:free',
+  'inclusionai/ling-3.0-tiny',
   'inclusionai/ling-3.0-flash',
-  'inclusionai/ling-3.0-flash:free',
   'meta-llama/llama-3.3-70b-instruct:free',
   'google/gemini-2.0-flash-lite-preview-02-05:free',
   'google/gemini-2.0-flash-exp:free',
@@ -445,14 +443,20 @@ async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, 
     const m = modelList[i];
     try {
       console.log(`[ZeroScribe AI] Requesting OpenRouter Model (${i + 1}/${modelList.length}): ${m}`);
+      
+      const reqHeaders = {
+        'HTTP-Referer': 'https://github.com/ZeroScribeAI',
+        'X-Title': 'ZeroScribe AI Extension',
+        'Content-Type': 'application/json'
+      };
+
+      if (apiKey && apiKey.trim() !== '') {
+        reqHeaders['Authorization'] = `Bearer ${apiKey.trim()}`;
+      }
+
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey || 'free'}`,
-          'HTTP-Referer': 'https://github.com/ZeroScribeAI',
-          'X-Title': 'ZeroScribe AI Extension',
-          'Content-Type': 'application/json'
-        },
+        headers: reqHeaders,
         body: JSON.stringify({
           model: m,
           messages: [
