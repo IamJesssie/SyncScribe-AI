@@ -308,23 +308,6 @@ function startDeepgramSTT(stream, apiKey) {
   };
 }
 
-// ── Inline AudioWorklet Processor Code ───────────────────────────────────
-const PCM_WORKLET_CODE = `
-class PCMProcessor extends AudioWorkletProcessor {
-  process(inputs) {
-    const input = inputs[0];
-    if (input && input.length > 0) {
-      const channelData = input[0];
-      if (channelData && channelData.length > 0) {
-        this.port.postMessage(channelData);
-      }
-    }
-    return true;
-  }
-}
-registerProcessor('pcm-processor', PCMProcessor);
-`;
-
 // ── PCM Pipeline for Deepgram (16kHz linear16) ──────────────────────────
 async function setupPCMPipeline(stream) {
   try {
@@ -344,13 +327,11 @@ async function setupPCMPipeline(stream) {
     const source = captureContext.createMediaStreamSource(stream);
     let pcmNode = null;
 
-    // 2. Modern AudioWorkletNode (Zero deprecation warnings)
+    // 2. Modern AudioWorkletNode (CSP-compliant extension file URL)
     if (captureContext.audioWorklet) {
       try {
-        const blob = new Blob([PCM_WORKLET_CODE], { type: 'application/javascript' });
-        const workletUrl = URL.createObjectURL(blob);
+        const workletUrl = chrome.runtime.getURL('pcm-processor.js');
         await captureContext.audioWorklet.addModule(workletUrl);
-        URL.revokeObjectURL(workletUrl);
 
         pcmNode = new AudioWorkletNode(captureContext, 'pcm-processor');
         pcmNode.port.onmessage = (event) => {

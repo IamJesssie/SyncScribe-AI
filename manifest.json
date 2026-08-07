@@ -59,5 +59,11 @@
     "https://web.whatsapp.com/*",
     "https://openrouter.ai/api/*",
     "https://api.deepgram.com/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["pcm-processor.js"],
+      "matches": ["<all_urls>"]
+    }
   ]
 }
