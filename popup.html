@@ -267,27 +267,7 @@ Ask AI Copilot any question about the meeting. Get instant answers when question
     <span id="toast-message">Notification message</span>
   </div>
 
-  <script>
-    // Dropdown toggle logic (CSP-safe, no inline onclick)
-    document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
-      trigger.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const dropdown = trigger.closest('.dropdown');
-        // Close other dropdowns
-        document.querySelectorAll('.dropdown').forEach(d => {
-          if (d !== dropdown) d.classList.remove('open');
-        });
-        dropdown.classList.toggle('open');
-      });
-    });
-
-    // Close dropdowns when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.dropdown')) {
-        document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('open'));
-      }
-    });
-  </script>
+  <script src="dropdown.js"></script>
   <script src="pdf_export.js"></script>
   <script src="popup.js"></script>
 </body>
