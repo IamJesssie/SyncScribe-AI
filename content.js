@@ -120,6 +120,35 @@
     }
   }
 
+  // Auto-trigger CC / Transcript buttons if available on meeting pages
+  function autoEnableCaptions() {
+    try {
+      if (activePlatform === 'Zoom Web') {
+        const ccBtn = document.querySelector(`
+          button[aria-label*="caption" i],
+          button[aria-label*="transcript" i],
+          button[aria-label*="Show Captions" i],
+          button[aria-label*="Closed Caption" i],
+          button[aria-label*="Show Transcript" i],
+          .caption-button,
+          .transcript-button
+        `);
+        if (ccBtn && ccBtn.getAttribute('aria-pressed') !== 'true') {
+          console.log('[ZeroScribe AI] Auto-enabling Zoom closed captions...');
+          ccBtn.click();
+        }
+      } else if (activePlatform === 'Google Meet') {
+        const meetCcBtn = document.querySelector('button[aria-label*="turn on captions" i], button[jsname="r8qahb"]');
+        if (meetCcBtn) {
+          console.log('[ZeroScribe AI] Auto-enabling Google Meet captions...');
+          meetCcBtn.click();
+        }
+      }
+    } catch (e) {
+      // Ignore click errors
+    }
+  }
+
   // Universal Scraper for Google Meet (item-level parsing)
   function scrapeGoogleMeet() {
     const candidateNodes = document.querySelectorAll(`
@@ -171,12 +200,29 @@
     });
   }
 
-  // Universal Scraper for Zoom Web
+  // Universal Scraper for Zoom Web (Supports Subtitles & Side Panel Transcript)
   function scrapeZoom() {
+    // 1. Direct Zoom Live Transcript items (Tactiq-style structure)
+    const transcriptItems = document.querySelectorAll('.transcript-item, div[class*="transcript-item"], div[class*="transcriptItem"]');
+    if (transcriptItems.length > 0) {
+      transcriptItems.forEach(item => {
+        const nameEl = item.querySelector('.transcript-item-name, [class*="speaker"], [class*="name"]');
+        const textEl = item.querySelector('.transcript-item-text, [class*="text"], [class*="content"]');
+        const speaker = nameEl ? nameEl.innerText.trim() : 'Speaker';
+        const text = textEl ? textEl.innerText.trim() : item.innerText.replace(speaker, '').trim();
+
+        if (text && text.length > 1 && text !== speaker) {
+          processCaptionEntry(speaker, text);
+        }
+      });
+      return;
+    }
+
+    // 2. Zoom Subtitle Overlay items
     const candidateNodes = document.querySelectorAll(`
       .caption-container,
-      .transcript-item,
       .subtitle-container,
+      .closed-caption-container,
       div[class*="caption"],
       div[class*="transcript"],
       div[class*="subtitle"],
@@ -190,24 +236,24 @@
       const rawText = node.innerText ? node.innerText.trim() : '';
       if (!rawText || rawText.length < 2) return;
 
-      if (rawText.includes('zoom.us') || rawText.includes('Mute') || rawText.includes('Start Video')) return;
+      if (rawText.includes('zoom.us') || rawText.includes('Mute') || rawText.includes('Start Video') || rawText.includes('ZEROSCRIBE')) return;
+
+      const speakerEl = node.querySelector('.speaker-name, .caption-speaker, div[class*="speaker"], span[class*="speaker"], span[class*="name"]');
+      const speaker = speakerEl ? speakerEl.innerText.trim() : '';
 
       const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
       if (lines.length >= 2) {
-        const possibleSpeaker = lines[0];
-        const spokenText = lines.slice(1).join(' ');
+        const possibleSpeaker = speaker || lines[0];
+        const spokenText = lines.slice(speaker ? 0 : 1).join(' ').replace(possibleSpeaker, '').trim();
         if (possibleSpeaker.length < 40 && spokenText.length > 1) {
           processCaptionEntry(possibleSpeaker, spokenText);
           return;
         }
       }
 
-      const speakerEl = node.querySelector('.speaker-name, .caption-speaker, div[class*="speaker"], span[class*="speaker"]');
-      const speaker = speakerEl ? speakerEl.innerText.trim() : 'Speaker';
       const text = rawText.replace(speaker, '').trim();
-
       if (text && text.length > 1 && text !== speaker) {
-        processCaptionEntry(speaker, text);
+        processCaptionEntry(speaker || 'Speaker', text);
       }
     });
   }
@@ -279,6 +325,7 @@
     isRecording = true;
     createOverlayWidget();
     updateOverlayStatus(`Listening (${activePlatform})...`, '#22c55e');
+    autoEnableCaptions();
 
     captionObserver = new MutationObserver((mutations) => {
       const isExternalMutation = mutations.some(m => {
