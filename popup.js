@@ -379,7 +379,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Obtain streamId directly within click event handler (user gesture context preserved!)
       try {
-        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        let activeTab = null;
+        const focused = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        if (focused.length > 0 && focused[0].id && !focused[0].url?.startsWith('chrome-extension://')) {
+          activeTab = focused[0];
+        } else {
+          const allActive = await chrome.tabs.query({ active: true });
+          activeTab = allActive.find(t => t.url && (t.url.includes('zoom.us') || t.url.includes('meet.google.com') || t.url.includes('teams.microsoft.com') || t.url.includes('teams.live.com')));
+          if (!activeTab && allActive.length > 0) activeTab = allActive[0];
+        }
+
         if (activeTab && activeTab.id) {
           tabTitle = activeTab.title || 'Active Tab';
           streamId = await new Promise((resolve) => {

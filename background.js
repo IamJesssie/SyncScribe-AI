@@ -359,27 +359,61 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+async function findTargetMeetingTab() {
+  try {
+    const focused = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (focused.length > 0 && focused[0].id && focused[0].url && (focused[0].url.includes('zoom.us') || focused[0].url.includes('meet.google.com') || focused[0].url.includes('teams.microsoft.com') || focused[0].url.includes('teams.live.com'))) {
+      return focused[0];
+    }
+
+    const allTabs = await chrome.tabs.query({});
+    const meetingTab = allTabs.find(t => t.url && (t.url.includes('zoom.us') || t.url.includes('meet.google.com') || t.url.includes('teams.microsoft.com') || t.url.includes('teams.live.com')));
+    if (meetingTab) return meetingTab;
+
+    return (focused.length > 0 && !focused[0].url?.startsWith('chrome-extension://')) ? focused[0] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
   if (request.action === 'START_LIVE_AUDIO_CAPTURE' || request.action === 'START_TAB_CAPTURE_VIA_GESTURE') {
     if (request.streamId) {
       startAudioCaptureWithStreamId(request.streamId, request.tabTitle)
         .then(() => sendResponse({ success: true, method: 'tabCapture' }))
         .catch((err) => sendResponse({ success: false, error: err.message }));
     } else {
-      // Fallback: Notify active tab content script to start DOM Caption Scraper (Meet/Zoom/Teams)
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const tab = tabs[0];
-        if (tab && tab.id) {
+      // Robust Fallback: Find target meeting tab across all windows
+      findTargetMeetingTab().then((tab) => {
+        if (!tab || !tab.id) {
+          return sendResponse({ success: false, error: 'Please switch to a Google Meet, Zoom, or Teams tab to start live transcription!' });
+        }
+
+        const sendStartRecording = () => {
           chrome.tabs.sendMessage(tab.id, { action: 'START_RECORDING' }, (res) => {
             if (chrome.runtime.lastError || !res) {
-              sendResponse({ success: false, error: 'Please switch to a Google Meet, Zoom, or Teams tab to start live transcription!' });
+              // Dynamic script injection fallback if content script not initialized
+              chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).then(() => {
+                setTimeout(() => {
+                  chrome.tabs.sendMessage(tab.id, { action: 'START_RECORDING' }, (retryRes) => {
+                    if (retryRes && retryRes.success) {
+                      captureActive = true;
+                      sendResponse({ success: true, method: 'DOM Caption Scraper' });
+                    } else {
+                      sendResponse({ success: false, error: 'Please switch to a Google Meet, Zoom, or Teams tab to start live transcription!' });
+                    }
+                  });
+                }, 300);
+              }).catch(() => {
+                sendResponse({ success: false, error: 'Please switch to a Google Meet, Zoom, or Teams tab to start live transcription!' });
+              });
             } else {
               captureActive = true;
               sendResponse({ success: true, method: 'DOM Caption Scraper' });
             }
           });
-        } else {
-          sendResponse({ success: false, error: 'No active meeting tab found.' });
-        }
+        };
+
+        sendStartRecording();
       });
     }
     return true;
