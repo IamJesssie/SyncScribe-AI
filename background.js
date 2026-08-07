@@ -388,28 +388,49 @@ async function handleNewCaption(newCap) {
   broadcastToRuntime({ action: 'NEW_CAPTION_ADDED', caption: newCap, totalCount: updated.length });
 }
 
+// ── Model Alias & Fuzzy Matching Dictionary ───────────────────────────
+const MODEL_ALIASES = {
+  'ling': 'inclusionai/ling-3.0-flash',
+  'ling-3.0': 'inclusionai/ling-3.0-flash',
+  'ling-3.0-flash': 'inclusionai/ling-3.0-flash',
+  'ling-3.0-tiny': 'inclusionai/ling-3.0-flash',
+  'ling-tiny': 'inclusionai/ling-3.0-flash',
+  'inclusionai/ling-3.0-tiny': 'inclusionai/ling-3.0-flash',
+  'inclusionai/ling-3.0-tiny:free': 'inclusionai/ling-3.0-flash',
+  'llama': 'meta-llama/llama-3.3-70b-instruct:free',
+  'llama-3.3': 'meta-llama/llama-3.3-70b-instruct:free',
+  'gemini': 'google/gemini-2.0-flash-lite-preview-02-05:free',
+  'gemini-flash': 'google/gemini-2.0-flash-lite-preview-02-05:free',
+  'deepseek': 'deepseek/deepseek-r1:free'
+};
+
+function normalizeModelSlug(userSlug) {
+  if (!userSlug) return 'inclusionai/ling-3.0-flash';
+  const clean = userSlug.trim().toLowerCase();
+  if (MODEL_ALIASES[clean]) return MODEL_ALIASES[clean];
+  return userSlug.trim();
+}
+
 // ── Model Fallback Array ────────────────────────────────────────────────
 const FREE_MODEL_FALLBACKS = [
   'inclusionai/ling-3.0-flash',
   'inclusionai/ling-3.0-flash:free',
   'meta-llama/llama-3.3-70b-instruct:free',
-  'meta-llama/llama-3.3-70b-instruct',
   'google/gemini-2.0-flash-lite-preview-02-05:free',
   'google/gemini-2.0-flash-exp:free',
-  'deepseek/deepseek-r1:free',
-  'qwen/qwen-2.5-coder-32b-instruct:free'
+  'deepseek/deepseek-r1:free'
 ];
 
 async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, userMessage) {
+  const primaryModel = normalizeModelSlug(selectedModel);
   const modelList = [];
 
-  if (selectedModel && selectedModel.trim()) {
-    const sm = selectedModel.trim();
-    modelList.push(sm);
-    if (!sm.endsWith(':free')) {
-      modelList.push(`${sm}:free`);
-    } else {
-      modelList.push(sm.replace(':free', ''));
+  if (primaryModel) {
+    modelList.push(primaryModel);
+    if (!primaryModel.endsWith(':free') && !primaryModel.includes('gpt-') && !primaryModel.includes('claude-')) {
+      modelList.push(`${primaryModel}:free`);
+    } else if (primaryModel.endsWith(':free')) {
+      modelList.push(primaryModel.replace(':free', ''));
     }
   }
 
@@ -417,6 +438,7 @@ async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, 
     if (!modelList.includes(m)) modelList.push(m);
   });
 
+  let primaryError = null;
   let lastError = null;
 
   for (let i = 0; i < modelList.length; i++) {
@@ -456,6 +478,12 @@ async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, 
         detail = parsed.error?.message || errText;
       } catch (e) {}
 
+      const errString = `Model "${m}" (${response.status}): ${detail}`;
+      if (i === 0) {
+        primaryError = errString;
+      }
+      lastError = errString;
+
       // Auto-extract recommended replacement slug if OpenRouter 404s with "use this slug instead: <slug>"
       const slugMatch = detail.match(/use this slug instead:\s*([a-zA-Z0-9_\-\.\/]+)/i);
       if (slugMatch && slugMatch[1]) {
@@ -466,15 +494,20 @@ async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, 
         }
       }
 
-      lastError = `Model ${m} error (${response.status}): ${detail}`;
-      console.warn(`[ZeroScribe AI] ${lastError}`);
+      console.warn(`[ZeroScribe AI] ${errString}`);
     } catch (e) {
-      lastError = `Network exception trying model ${m}: ${e.message}`;
-      console.warn(`[ZeroScribe AI] ${lastError}`);
+      const errString = `Network exception trying model "${m}": ${e.message}`;
+      if (i === 0) primaryError = errString;
+      lastError = errString;
+      console.warn(`[ZeroScribe AI] ${errString}`);
     }
   }
 
-  throw new Error(lastError || 'All AI models failed to generate a response. Please check network or API key.');
+  const finalError = primaryError
+    ? `Primary model "${selectedModel}" failed (${primaryError}). ${lastError !== primaryError ? 'Fallback error: ' + lastError : ''}`
+    : lastError || 'All AI models failed to generate a response. Please check network or API key.';
+
+  throw new Error(finalError);
 }
 
 // ── OpenRouter AI Summarization ──────────────────────────────────────────
