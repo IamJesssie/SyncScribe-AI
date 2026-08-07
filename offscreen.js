@@ -308,8 +308,25 @@ function startDeepgramSTT(stream, apiKey) {
   };
 }
 
+// ── Inline AudioWorklet Processor Code ───────────────────────────────────
+const PCM_WORKLET_CODE = `
+class PCMProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const input = inputs[0];
+    if (input && input.length > 0) {
+      const channelData = input[0];
+      if (channelData && channelData.length > 0) {
+        this.port.postMessage(channelData);
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-processor', PCMProcessor);
+`;
+
 // ── PCM Pipeline for Deepgram (16kHz linear16) ──────────────────────────
-function setupPCMPipeline(stream) {
+async function setupPCMPipeline(stream) {
   try {
     // 1. Try 16kHz AudioContext first; fall back to hardware native sample rate if unsupported by OS/driver
     try {
@@ -325,42 +342,63 @@ function setupPCMPipeline(stream) {
 
     const nativeSampleRate = captureContext.sampleRate;
     const source = captureContext.createMediaStreamSource(stream);
-    const bufferSize = 4096;
-    
-    // ScriptProcessorNode for PCM extraction
-    const processor = (captureContext.createScriptProcessor || captureContext.createJavaScriptNode).call(captureContext, bufferSize, 1, 1);
-    
-    processor.onaudioprocess = (event) => {
-      if (!deepgramSocket || deepgramSocket.readyState !== WebSocket.OPEN) return;
-      
-      const inputData = event.inputBuffer.getChannelData(0);
-      
-      // Downsample to 16kHz if capture context is running at native hardware rate (e.g., 44.1kHz or 48kHz)
-      let pcmData = inputData;
-      if (nativeSampleRate !== 16000) {
-        pcmData = downsampleBuffer(inputData, nativeSampleRate, 16000);
-      }
-      
-      const pcm16 = new Int16Array(pcmData.length);
-      for (let i = 0; i < pcmData.length; i++) {
-        const s = Math.max(-1, Math.min(1, pcmData[i]));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
-      
-      try {
-        deepgramSocket.send(pcm16.buffer);
-      } catch (sendErr) {
-        console.warn('[ZeroScribe Offscreen] Deepgram send error:', sendErr.message);
-      }
-    };
+    let pcmNode = null;
 
-    source.connect(processor);
+    // 2. Modern AudioWorkletNode (Zero deprecation warnings)
+    if (captureContext.audioWorklet) {
+      try {
+        const blob = new Blob([PCM_WORKLET_CODE], { type: 'application/javascript' });
+        const workletUrl = URL.createObjectURL(blob);
+        await captureContext.audioWorklet.addModule(workletUrl);
+        URL.revokeObjectURL(workletUrl);
+
+        pcmNode = new AudioWorkletNode(captureContext, 'pcm-processor');
+        pcmNode.port.onmessage = (event) => {
+          if (!deepgramSocket || deepgramSocket.readyState !== WebSocket.OPEN) return;
+          const inputData = event.data;
+          let pcmData = inputData;
+          if (nativeSampleRate !== 16000) {
+            pcmData = downsampleBuffer(inputData, nativeSampleRate, 16000);
+          }
+          const pcm16 = new Int16Array(pcmData.length);
+          for (let i = 0; i < pcmData.length; i++) {
+            const s = Math.max(-1, Math.min(1, pcmData[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
+          try { deepgramSocket.send(pcm16.buffer); } catch (e) {}
+        };
+        console.log(`[ZeroScribe Offscreen] AudioWorklet PCM pipeline connected (${nativeSampleRate}Hz -> 16kHz)`);
+      } catch (workletErr) {
+        console.warn('[ZeroScribe Offscreen] AudioWorklet setup failed, using fallback:', workletErr.message);
+      }
+    }
+
+    // 3. ScriptProcessorNode fallback if AudioWorklet unavailable
+    if (!pcmNode) {
+      const bufferSize = 4096;
+      pcmNode = (captureContext.createScriptProcessor || captureContext.createJavaScriptNode).call(captureContext, bufferSize, 1, 1);
+      pcmNode.onaudioprocess = (event) => {
+        if (!deepgramSocket || deepgramSocket.readyState !== WebSocket.OPEN) return;
+        const inputData = event.inputBuffer.getChannelData(0);
+        let pcmData = inputData;
+        if (nativeSampleRate !== 16000) {
+          pcmData = downsampleBuffer(inputData, nativeSampleRate, 16000);
+        }
+        const pcm16 = new Int16Array(pcmData.length);
+        for (let i = 0; i < pcmData.length; i++) {
+          const s = Math.max(-1, Math.min(1, pcmData[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        try { deepgramSocket.send(pcm16.buffer); } catch (e) {}
+      };
+      console.log(`[ZeroScribe Offscreen] ScriptProcessor PCM pipeline connected (${nativeSampleRate}Hz -> 16kHz)`);
+    }
+
+    source.connect(pcmNode);
     const silentGain = captureContext.createGain();
     silentGain.gain.value = 0;
-    processor.connect(silentGain);
+    pcmNode.connect(silentGain);
     silentGain.connect(captureContext.destination);
-
-    console.log(`[ZeroScribe Offscreen] PCM pipeline connected (${nativeSampleRate}Hz -> 16kHz linear16)`);
   } catch (err) {
     console.error('[ZeroScribe Offscreen] PCM pipeline setup failed, falling back to Web Speech API:', err);
     if (deepgramSocket) {
