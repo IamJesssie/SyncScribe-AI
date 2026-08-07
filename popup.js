@@ -368,52 +368,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Action Button: Toggle Live Tab Audio Capture (Direct STT)
+  // Action Button: Toggle Live Meeting Transcription (Tactiq-Style Unlimited Engine)
   toggleTabAudioBtn.addEventListener('click', async () => {
     if (!isAudioCapturing) {
       toggleTabAudioBtn.disabled = true;
-      toggleTabAudioBtn.innerText = '🎙️ Connecting Tab Audio...';
+      toggleTabAudioBtn.innerText = '🎙️ Connecting Live Transcriber...';
 
-      let streamId = null;
-      let tabTitle = 'Active Tab';
+      let tabTitle = 'Meeting Tab';
 
-      // Obtain streamId directly within click event handler (user gesture context preserved!)
       try {
-        let activeTab = null;
         const focused = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-        if (focused.length > 0 && focused[0].id && !focused[0].url?.startsWith('chrome-extension://')) {
-          activeTab = focused[0];
-        } else {
-          const allActive = await chrome.tabs.query({ active: true });
-          activeTab = allActive.find(t => t.url && (t.url.includes('zoom.us') || t.url.includes('meet.google.com') || t.url.includes('teams.microsoft.com') || t.url.includes('teams.live.com')));
-          if (!activeTab && allActive.length > 0) activeTab = allActive[0];
-        }
-
-        if (activeTab && activeTab.id) {
-          tabTitle = activeTab.title || 'Active Tab';
-          streamId = await new Promise((resolve) => {
-            try {
-              chrome.tabCapture.getMediaStreamId({ targetTabId: activeTab.id }, (id) => {
-                if (chrome.runtime.lastError) {
-                  // Silently ignore tabCapture permission limits & fallback to DOM scraper
-                  resolve(null);
-                } else {
-                  resolve(id);
-                }
-              });
-            } catch (err) {
-              resolve(null);
-            }
-          });
+        if (focused.length > 0 && focused[0].title) {
+          tabTitle = focused[0].title;
         }
       } catch (e) {
-        // Fallback to DOM Scraper cleanly
+        // Tab query fallback
       }
 
       const response = await new Promise((resolve) => {
         chrome.runtime.sendMessage({
           action: 'START_LIVE_AUDIO_CAPTURE',
-          streamId: streamId,
+          streamId: null,
           tabTitle: tabTitle
         }, resolve);
       });
@@ -425,10 +400,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         toggleTabAudioBtn.style.background = 'rgba(239, 68, 68, 0.25)';
         toggleTabAudioBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
         toggleTabAudioBtn.style.color = '#f87171';
-        const methodLabel = response.method === 'DOM Caption Scraper' ? 'Live Caption Engine' : response.method;
-        showToast(`Transcribing "${tabTitle}" via ${methodLabel}!`);
+        showToast(`Transcribing "${tabTitle}" live!`);
       } else {
-        showToast(response?.error || 'Failed to start transcription engine.', true);
+        showToast(response?.error || 'Please switch to Google Meet, Zoom, or Teams tab!', true);
       }
     } else {
       chrome.runtime.sendMessage({ action: 'STOP_LIVE_AUDIO_CAPTURE' });

@@ -149,61 +149,50 @@
     }
   }
 
-  // Universal Scraper for Google Meet (item-level parsing & bottom-left floating captions)
+  // Universal Scraper for Google Meet (Tactiq-Style In-Page Caption & Speaker Parser)
   function scrapeGoogleMeet() {
-    // 1. Direct Meet Caption Blocks (jsname YSStwy or r4nke or nM4d2c)
-    const captionBlocks = document.querySelectorAll('div[jsname="YSStwy"], div[jsname="r4nke"], div[class*="a7vLMe"], div[class*="nM4d2c"], div[class*="n74d0c"], div[class*="bhZpf"]');
-    if (captionBlocks.length > 0) {
-      captionBlocks.forEach(node => {
-        const rawText = node.innerText ? node.innerText.trim() : '';
-        if (!rawText || rawText.length < 2) return;
-        if (rawText.includes('meet.google.com') && rawText.length > 100) return;
+    const captionNodes = document.querySelectorAll(`
+      div[jsname="YSStwy"],
+      div[jsname="r4nke"],
+      div[class*="a7vLMe"],
+      div[class*="nM4d2c"],
+      div[class*="n74d0c"],
+      div[class*="bhZpf"],
+      div[class*="iL4vfe"],
+      div[class*="cM9B2"],
+      div[class*="T4523c"],
+      div[class*="Z6B62d"],
+      div[class*="vD79td"]
+    `);
 
-        // Try extracting speaker name from child nodes
-        const speakerEl = node.querySelector('div[class*="Yz62fc"], span.zs7W8d, div[class*="M4t5We"], div.Z6B62d, div[class*="iL4vfe"], span[class*="zs7W8d"]');
-        let speaker = speakerEl ? speakerEl.innerText.trim() : '';
+    captionNodes.forEach(node => {
+      // Ignore root or large container elements
+      if (node.children.length > 20) return;
+      const textContent = node.innerText ? node.innerText.trim() : '';
+      if (!textContent || textContent.length < 2) return;
+      if (textContent.includes('meet.google.com') && textContent.length > 80) return;
 
-        const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        if (!speaker && lines.length >= 2) {
-          if (lines[0].length < 35 && !lines[0].includes('http')) {
-            speaker = lines[0];
-          }
-        }
+      const lines = textContent.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      if (lines.length === 0) return;
 
-        let spokenText = '';
-        if (speaker && rawText.startsWith(speaker)) {
-          spokenText = rawText.substring(speaker.length).trim();
-        } else if (lines.length >= 2 && lines[0] === speaker) {
-          spokenText = lines.slice(1).join(' ');
-        } else {
-          spokenText = rawText;
-        }
+      let speaker = 'Speaker';
+      let spokenText = textContent;
 
-        if (speaker.endsWith(':')) {
-          speaker = speaker.slice(0, -1).trim();
+      if (lines.length >= 2) {
+        if (lines[0].length < 35 && !lines[0].includes('http')) {
+          speaker = lines[0].replace(/:\s*$/, '').trim();
+          spokenText = lines.slice(1).join(' ').replace(/^:\s*/, '').trim();
         }
-        if (spokenText.startsWith(':')) {
-          spokenText = spokenText.slice(1).trim();
+      } else if (lines.length === 1) {
+        const colonMatch = lines[0].match(/^([^:]{1,35}):\s*(.+)$/);
+        if (colonMatch) {
+          speaker = colonMatch[1].trim();
+          spokenText = colonMatch[2].trim();
         }
+      }
 
-        if (spokenText && spokenText.length > 1 && spokenText !== speaker) {
-          processCaptionEntry(speaker || 'Speaker', spokenText);
-        }
-      });
-    }
-
-    // 2. Global fallback for floating bottom-left captions (e.g., "You\nLike this?" or "jake\nNice.")
-    const floatingCaptions = document.querySelectorAll('div[class*="iL4vfe"], div[class*="cM9B2"], div[class*="T4523c"], div[class*="Z6B62d"]');
-    floatingCaptions.forEach(node => {
-      const rawText = node.innerText ? node.innerText.trim() : '';
-      if (!rawText || rawText.length < 2) return;
-      const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      if (lines.length >= 2 && lines[0].length < 35) {
-        const speaker = lines[0].replace(':', '').trim();
-        const text = lines.slice(1).join(' ').replace(':', '').trim();
-        if (text && text.length > 1) {
-          processCaptionEntry(speaker, text);
-        }
+      if (spokenText && spokenText.length > 1 && spokenText !== speaker) {
+        processCaptionEntry(speaker, spokenText);
       }
     });
   }
