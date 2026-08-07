@@ -12,7 +12,7 @@
   <header class="app-header">
     <div class="brand-container">
       <div class="logo-badge">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
           <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
           <line x1="12" y1="19" x2="12" y2="22"></line>
@@ -20,14 +20,14 @@
         </svg>
       </div>
       <div>
-        <div class="brand-title">SyncScribe <span>AI</span></div>
+        <div class="brand-title">SyncScribe <span class="ai-tag">AI</span></div>
         <div class="brand-subtitle">Zero-Backend Meeting Relay</div>
       </div>
     </div>
 
     <div class="header-actions">
       <button class="btn-icon" id="btn-toggle-recording" title="Toggle Recording">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"></circle>
           <rect x="9" y="9" width="6" height="6" fill="currentColor"></rect>
         </svg>
@@ -54,7 +54,7 @@
     <!-- Navigation Tabs -->
     <nav class="tabs-nav">
       <button class="tab-btn active" data-tab="tab-transcript">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
           <polyline points="14 2 14 8 20 8"></polyline>
           <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -64,21 +64,21 @@
       </button>
 
       <button class="tab-btn" data-tab="tab-summary">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
-        AI Summary
+        Summary
       </button>
 
       <button class="tab-btn" data-tab="tab-copilot">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
         </svg>
-        💬 AI Copilot
+        Copilot
       </button>
 
       <button class="tab-btn" data-tab="tab-settings">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
         </svg>
@@ -90,7 +90,7 @@
     <section class="tab-panel active" id="tab-transcript">
       <div class="transcript-box" id="transcript-container">
         <div class="empty-state">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
           <div>No meeting captions recorded yet.</div>
@@ -108,13 +108,33 @@ Click "Generate AI Summary Preview" below to generate a structured AI executive 
 
     <!-- Tab 3: AI Copilot Q&A -->
     <section class="tab-panel" id="tab-copilot">
-      <div class="copilot-header">⚡ QUICK CUES (ONE-CLICK ANSWERS)</div>
+      <div class="copilot-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+        QUICK CUES (ONE-CLICK ANSWERS)
+      </div>
       <div class="copilot-pills">
-        <button class="btn-copilot-pill" id="pill-answer-now">⚡ Answer now</button>
-        <button class="btn-copilot-pill" id="pill-suggest-questions">❓ Suggest questions</button>
-        <button class="btn-copilot-pill" id="pill-recent-summary">📌 Last 5 min</button>
-        <button class="btn-copilot-pill" id="pill-explain-terms">💡 Explain terms</button>
-        <button class="btn-copilot-pill" id="pill-cebu-tasks">🎯 Action items</button>
+        <button class="btn-copilot-pill" id="pill-answer-now">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          Answer now
+        </button>
+        <button class="btn-copilot-pill" id="pill-suggest-questions">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          Suggest Qs
+        </button>
+        <button class="btn-copilot-pill" id="pill-recent-summary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          Last 5m
+        </button>
+        <button class="btn-copilot-pill" id="pill-explain-terms">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+          Terms
+        </button>
+        <button class="btn-copilot-pill" id="pill-cebu-tasks">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+          Actions
+        </button>
       </div>
 
       <div class="summary-box copilot-answer-box" id="copilot-answer-container">
@@ -127,7 +147,7 @@ Ask AI Copilot any question about the meeting. Get instant answers when question
       </div>
     </section>
 
-    <!-- Tab 3: Settings -->
+    <!-- Tab 4: Settings -->
     <section class="tab-panel" id="tab-settings">
       <div class="form-group">
         <label class="form-label" for="setting-apikey">OpenRouter API Key (Optional for Free Models)</label>
@@ -162,7 +182,7 @@ Ask AI Copilot any question about the meeting. Get instant answers when question
         <div class="form-label-row">
           <label class="form-label form-label-nomargin" for="setting-systemprompt">Custom AI System Prompt</label>
           <button class="btn-secondary btn-small" id="btn-generate-systemprompt">
-            ✨ Auto-Generate Prompt from Transcript
+            ✨ Auto-Generate Prompt
           </button>
         </div>
         <textarea class="form-input" id="setting-systemprompt" rows="5" placeholder="You are SyncScribe AI... Customize persona, structure, formatting, or language rules."></textarea>
@@ -217,7 +237,7 @@ Ask AI Copilot any question about the meeting. Get instant answers when question
   <input type="file" id="input-upload-file" accept=".txt,.json,.vtt,.srt,.log,.mp3,.wav,.m4a,.ogg,.aac,.webm,.flac" class="hidden-input">
   
   <div class="actions-grid">
-    <button class="btn-primary btn-col-span-2" id="btn-toggle-tab-audio">
+    <button class="btn-secondary btn-col-span-2" id="btn-toggle-tab-audio">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
         <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -228,7 +248,7 @@ Ask AI Copilot any question about the meeting. Get instant answers when question
     </button>
     
     <button class="btn-primary btn-col-span-2" id="btn-generate-summary">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
       </svg>
       Generate AI Summary Preview
@@ -236,28 +256,52 @@ Ask AI Copilot any question about the meeting. Get instant answers when question
 
     <div class="dropdown" id="dropdown-share">
       <button class="btn-secondary btn-full-width dropdown-trigger">
-        Share Options ▼
+        <span>Share Options</span>
+        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
       </button>
       <div class="dropdown-menu">
-        <button class="dropdown-item" id="btn-dispatch-whatsapp">Send to WhatsApp</button>
-        <button class="dropdown-item" id="btn-dispatch-slack">Send to Slack</button>
-        <button class="dropdown-item" id="btn-dispatch-teams">Send to Teams</button>
-        <button class="dropdown-item" id="btn-copy-summary">Copy Summary</button>
+        <button class="dropdown-item" id="btn-dispatch-whatsapp">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+          Send to WhatsApp
+        </button>
+        <button class="dropdown-item" id="btn-dispatch-slack">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"></path><path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"></path><path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"></path><path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"></path></svg>
+          Send to Slack
+        </button>
+        <button class="dropdown-item" id="btn-dispatch-teams">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          Send to Teams
+        </button>
+        <button class="dropdown-item" id="btn-copy-summary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          Copy Summary
+        </button>
       </div>
     </div>
 
     <div class="dropdown" id="dropdown-export">
       <button class="btn-secondary btn-full-width dropdown-trigger">
-        Export Options ▼
+        <span>Export Options</span>
+        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
       </button>
       <div class="dropdown-menu">
-        <button class="dropdown-item" id="btn-export-txt">Download TXT</button>
-        <button class="dropdown-item" id="btn-export-pdf">Download PDF</button>
-        <button class="dropdown-item" id="btn-upload-file">Upload Transcript or Audio File</button>
+        <button class="dropdown-item" id="btn-export-txt">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Download TXT
+        </button>
+        <button class="dropdown-item" id="btn-export-pdf">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          Download PDF
+        </button>
+        <button class="dropdown-item" id="btn-upload-file">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          Upload Audio/Transcript
+        </button>
       </div>
     </div>
 
     <button class="btn-text-link btn-col-span-2" id="btn-clear-transcript">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
       Clear Live Transcript
     </button>
   </div>

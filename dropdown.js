@@ -1,4 +1,4 @@
-// Dropdown toggle logic (CSP-safe — must be in external .js file)
+// Dropdown toggle & auto-close logic (CSP-safe external script)
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
     trigger.addEventListener('click', (e) => {
@@ -9,6 +9,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (d !== dropdown) d.classList.remove('open');
       });
       dropdown.classList.toggle('open');
+    });
+  });
+
+  // Close dropdown when an item inside is clicked
+  document.querySelectorAll('.dropdown-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const dropdown = item.closest('.dropdown');
+      if (dropdown) dropdown.classList.remove('open');
     });
   });
 
