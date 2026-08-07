@@ -392,24 +392,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (activeTab && activeTab.id) {
           tabTitle = activeTab.title || 'Active Tab';
           streamId = await new Promise((resolve) => {
-            chrome.tabCapture.getMediaStreamId({ targetTabId: activeTab.id }, (id) => {
-              if (chrome.runtime.lastError) {
-                console.warn('[ZeroScribe UI] tabCapture gesture warning:', chrome.runtime.lastError.message);
-                resolve(null);
-              } else {
-                resolve(id);
-              }
-            });
+            try {
+              chrome.tabCapture.getMediaStreamId({ targetTabId: activeTab.id }, (id) => {
+                if (chrome.runtime.lastError) {
+                  // Silently ignore tabCapture permission limits & fallback to DOM scraper
+                  resolve(null);
+                } else {
+                  resolve(id);
+                }
+              });
+            } catch (err) {
+              resolve(null);
+            }
           });
         }
       } catch (e) {
-        console.warn('[ZeroScribe UI] Tab query error:', e.message);
+        // Fallback to DOM Scraper cleanly
       }
 
       const response = await new Promise((resolve) => {
         chrome.runtime.sendMessage({
           action: 'START_LIVE_AUDIO_CAPTURE',
-          streamId: streamId
+          streamId: streamId,
+          tabTitle: tabTitle
         }, resolve);
       });
       toggleTabAudioBtn.disabled = false;
@@ -420,7 +425,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         toggleTabAudioBtn.style.background = 'rgba(239, 68, 68, 0.25)';
         toggleTabAudioBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
         toggleTabAudioBtn.style.color = '#f87171';
-        const methodLabel = response.method === 'webspeech' ? 'Web Speech API (Free)' : response.method === 'deepgram' ? 'Deepgram Nova-2' : response.method;
+        const methodLabel = response.method === 'DOM Caption Scraper' ? 'Live Caption Engine' : response.method;
         showToast(`Transcribing "${tabTitle}" via ${methodLabel}!`);
       } else {
         showToast(response?.error || 'Failed to start transcription engine.', true);
