@@ -224,12 +224,12 @@ function startWebSpeechSTT(stream) {
   };
 
   recognition.onerror = (err) => {
-    console.warn('[ZeroScribe Offscreen] Speech Recognition error:', err.error);
-    if (err.error === 'not-allowed') {
-      console.info('[ZeroScribe Offscreen] Microphone permission notice: not-allowed');
+    if (err.error === 'not-allowed' || err.error === 'service-not-allowed') {
+      console.info('[ZeroScribe Offscreen] Speech recognition fallback mode (DOM / Tab capture active).');
       state = 'idle';
       return;
     }
+    console.warn('[ZeroScribe Offscreen] Speech Recognition error:', err.error);
     // Auto-retry for recoverable errors
     if (state === 'running' && err.error !== 'aborted') {
       setTimeout(() => {

@@ -321,15 +321,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === 'START_TAB_CAPTURE_VIA_GESTURE') {
-    startAudioCaptureWithStreamId(request.streamId, request.tabTitle)
-      .then(() => sendResponse({ success: true }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
+  if (request.action === 'START_LIVE_AUDIO_CAPTURE' || request.action === 'START_TAB_CAPTURE_VIA_GESTURE') {
+    if (request.streamId) {
+      startAudioCaptureWithStreamId(request.streamId, request.tabTitle)
+        .then(() => sendResponse({ success: true, method: 'tabCapture' }))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+    } else {
+      // Fallback: Notify active tab content script to start DOM Caption Scraper (Meet/Zoom/Teams)
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs[0];
+        if (tab && tab.id) {
+          chrome.tabs.sendMessage(tab.id, { action: 'START_RECORDING' }, (res) => {
+            if (chrome.runtime.lastError || !res) {
+              sendResponse({ success: false, error: 'Please switch to a Google Meet, Zoom, or Teams tab to start live transcription!' });
+            } else {
+              captureActive = true;
+              sendResponse({ success: true, method: 'DOM Caption Scraper' });
+            }
+          });
+        } else {
+          sendResponse({ success: false, error: 'No active meeting tab found.' });
+        }
+      });
+    }
     return true;
   }
 
-  if (request.action === 'STOP_TAB_CAPTURE') {
+  if (request.action === 'STOP_LIVE_AUDIO_CAPTURE' || request.action === 'STOP_TAB_CAPTURE') {
     stopAudioCapture().then(() => sendResponse({ success: true }));
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0] && tabs[0].id) {
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'STOP_RECORDING' }).catch(() => {});
+      }
+    });
     return true;
   }
 
