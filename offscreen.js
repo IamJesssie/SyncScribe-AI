@@ -311,38 +311,86 @@ function startDeepgramSTT(stream, apiKey) {
 // ── PCM Pipeline for Deepgram (16kHz linear16) ──────────────────────────
 function setupPCMPipeline(stream) {
   try {
-    // Create a 16kHz AudioContext for downsampling
-    captureContext = new AudioContext({ sampleRate: 16000 });
+    // 1. Try 16kHz AudioContext first; fall back to hardware native sample rate if unsupported by OS/driver
+    try {
+      captureContext = new AudioContext({ sampleRate: 16000 });
+    } catch (e) {
+      console.warn('[ZeroScribe Offscreen] 16kHz AudioContext unsupported on device, falling back to native hardware sample rate:', e.message);
+      captureContext = new AudioContext();
+    }
+
+    if (!captureContext) {
+      captureContext = new AudioContext();
+    }
+
+    const nativeSampleRate = captureContext.sampleRate;
     const source = captureContext.createMediaStreamSource(stream);
+    const bufferSize = 4096;
     
-    // Use ScriptProcessorNode (widely supported) for PCM extraction
-    const processor = captureContext.createScriptProcessor(4096, 1, 1);
+    // ScriptProcessorNode for PCM extraction
+    const processor = (captureContext.createScriptProcessor || captureContext.createJavaScriptNode).call(captureContext, bufferSize, 1, 1);
     
     processor.onaudioprocess = (event) => {
       if (!deepgramSocket || deepgramSocket.readyState !== WebSocket.OPEN) return;
       
       const inputData = event.inputBuffer.getChannelData(0);
-      const pcm16 = new Int16Array(inputData.length);
       
-      for (let i = 0; i < inputData.length; i++) {
-        const s = Math.max(-1, Math.min(1, inputData[i]));
+      // Downsample to 16kHz if capture context is running at native hardware rate (e.g., 44.1kHz or 48kHz)
+      let pcmData = inputData;
+      if (nativeSampleRate !== 16000) {
+        pcmData = downsampleBuffer(inputData, nativeSampleRate, 16000);
+      }
+      
+      const pcm16 = new Int16Array(pcmData.length);
+      for (let i = 0; i < pcmData.length; i++) {
+        const s = Math.max(-1, Math.min(1, pcmData[i]));
         pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
       }
       
-      deepgramSocket.send(pcm16.buffer);
+      try {
+        deepgramSocket.send(pcm16.buffer);
+      } catch (sendErr) {
+        console.warn('[ZeroScribe Offscreen] Deepgram send error:', sendErr.message);
+      }
     };
 
     source.connect(processor);
-    // Connect to destination with zero gain to prevent double playback
     const silentGain = captureContext.createGain();
     silentGain.gain.value = 0;
     processor.connect(silentGain);
     silentGain.connect(captureContext.destination);
 
-    console.log('[ZeroScribe Offscreen] PCM pipeline connected (16kHz)');
+    console.log(`[ZeroScribe Offscreen] PCM pipeline connected (${nativeSampleRate}Hz -> 16kHz linear16)`);
   } catch (err) {
-    console.error('[ZeroScribe Offscreen] PCM pipeline error:', err);
+    console.error('[ZeroScribe Offscreen] PCM pipeline setup failed, falling back to Web Speech API:', err);
+    if (deepgramSocket) {
+      try { deepgramSocket.close(); } catch (e) {}
+      deepgramSocket = null;
+    }
+    startWebSpeechSTT(stream);
   }
+}
+
+// ── Downsampler Helper (Native sampleRate -> 16kHz) ────────────────────
+function downsampleBuffer(buffer, sampleRate, outSampleRate) {
+  if (outSampleRate >= sampleRate) return buffer;
+  const sampleRateRatio = sampleRate / outSampleRate;
+  const newLength = Math.round(buffer.length / sampleRateRatio);
+  const result = new Float32Array(newLength);
+  let offsetResult = 0;
+  let offsetBuffer = 0;
+  while (offsetResult < result.length) {
+    const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+    let accum = 0, count = 0;
+    for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+      accum += buffer[i];
+      count++;
+    }
+    result[offsetResult] = count > 0 ? accum / count : 0;
+    offsetResult++;
+    offsetBuffer = nextOffsetBuffer;
+  }
+  return result;
 }
 
 // ── ENGINE_STOP: Full teardown ──────────────────────────────────────────
