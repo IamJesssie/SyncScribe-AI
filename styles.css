@@ -335,28 +335,33 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .copilot-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: 5px;
+  margin-bottom: 12px;
 }
 
 .btn-copilot-pill {
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  border-radius: var(--radius-sm);
-  padding: 6px 12px;
-  font-size: 12px;
+  border-radius: 100px;
+  padding: 4px 10px;
+  font-size: 10.5px;
   font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  font-family: inherit;
+  line-height: 1.4;
 }
 
 .btn-copilot-pill:hover {
-  background: var(--border);
-  color: var(--text-main);
+  background: var(--accent);
+  color: var(--bg-dark);
+  border-color: var(--accent);
 }
 
 .btn-copilot-pill:active {
-  transform: scale(0.98);
+  transform: scale(0.96);
 }
 
 .copilot-answer-box {
@@ -528,6 +533,7 @@ textarea.form-input {
 .dropdown {
   position: relative;
   width: 100%;
+  grid-column: span 1;
 }
 
 .dropdown-menu {
