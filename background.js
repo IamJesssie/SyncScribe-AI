@@ -377,12 +377,7 @@ async function findTargetMeetingTab() {
 }
 
   if (request.action === 'START_LIVE_AUDIO_CAPTURE' || request.action === 'START_TAB_CAPTURE_VIA_GESTURE') {
-    if (request.streamId) {
-      startAudioCaptureWithStreamId(request.streamId, request.tabTitle)
-        .then(() => sendResponse({ success: true, method: 'tabCapture' }))
-        .catch((err) => sendResponse({ success: false, error: err.message }));
-    } else {
-      // Robust Fallback: Find target meeting tab across all windows
+    const triggerDomFallback = () => {
       findTargetMeetingTab().then((tab) => {
         if (!tab || !tab.id) {
           return sendResponse({ success: false, error: 'Please switch to a Google Meet, Zoom, or Teams tab to start live transcription!' });
@@ -395,12 +390,8 @@ async function findTargetMeetingTab() {
               chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).then(() => {
                 setTimeout(() => {
                   chrome.tabs.sendMessage(tab.id, { action: 'START_RECORDING' }, (retryRes) => {
-                    if (retryRes && retryRes.success) {
-                      captureActive = true;
-                      sendResponse({ success: true, method: 'DOM Caption Scraper' });
-                    } else {
-                      sendResponse({ success: false, error: 'Please switch to a Google Meet, Zoom, or Teams tab to start live transcription!' });
-                    }
+                    captureActive = true;
+                    sendResponse({ success: true, method: 'DOM Caption Scraper' });
                   });
                 }, 300);
               }).catch(() => {
@@ -415,6 +406,17 @@ async function findTargetMeetingTab() {
 
         sendStartRecording();
       });
+    };
+
+    if (request.streamId) {
+      startAudioCaptureWithStreamId(request.streamId, request.tabTitle)
+        .then(() => sendResponse({ success: true, method: 'tabCapture' }))
+        .catch((err) => {
+          console.warn('[ZeroScribe AI] Tab capture error (falling back to DOM scraper):', err.message);
+          triggerDomFallback();
+        });
+    } else {
+      triggerDomFallback();
     }
     return true;
   }
