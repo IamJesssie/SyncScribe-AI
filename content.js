@@ -82,62 +82,42 @@
     }
   }
 
-  // Handle caption additions with sentence smoothing & deduplication
+  // Safety helper to check if extension context is valid
+  function isExtensionContextValid() {
+    return typeof chrome !== 'undefined' && chrome.runtime && !!chrome.runtime.id;
+  }
+
+  // Handle caption additions cleanly via message passing to background.js
   function processCaptionEntry(speaker, text) {
+    if (!isExtensionContextValid()) return;
     if (!text || text.trim() === '') return;
     const cleanText = text.trim();
 
     if (cleanText === lastCapturedText) return;
+    lastCapturedText = cleanText;
+
+    capturedCount++;
+    updateOverlayCount(capturedCount);
 
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const entry = {
+      id: Date.now() + Math.random().toString(36).substr(2, 4),
+      platform: activePlatform,
+      speaker: speaker || 'Speaker',
+      text: cleanText,
+      timestamp: timestamp,
+      rawTime: Date.now()
+    };
 
-    chrome.storage.local.get(['zeroscribe_captions', 'syncscribe_captions'], (res) => {
-      let captions = res.zeroscribe_captions || res.syncscribe_captions || [];
-      
-      // Look at recent 12 entries to check for text similarity or speaker upgrade
-      const recentSliceIndex = Math.max(0, captions.length - 12);
-      const recentCaptions = captions.slice(recentSliceIndex);
-
-      const existingMatch = recentCaptions.find(c => {
-        const textA = c.text.toLowerCase();
-        const textB = cleanText.toLowerCase();
-        return textA === textB || textA.includes(textB) || textB.includes(textA);
+    try {
+      chrome.runtime.sendMessage({ action: 'NEW_CAPTION', data: entry }, (res) => {
+        if (chrome.runtime.lastError) {
+          // Extension reloaded or context invalidated silently ignored
+        }
       });
-
-      if (existingMatch) {
-        if ((existingMatch.speaker === 'Speaker' || existingMatch.speaker === 'Participant') &&
-            speaker && speaker !== 'Speaker' && speaker !== 'Participant') {
-          existingMatch.speaker = speaker;
-        }
-
-        if (cleanText.length > existingMatch.text.length) {
-          existingMatch.text = cleanText;
-          existingMatch.timestamp = timestamp;
-        }
-
-        lastCapturedText = cleanText;
-        chrome.storage.local.set({ zeroscribe_captions: captions });
-        chrome.runtime.sendMessage({ action: 'CAPTION_UPDATED' }).catch(() => {});
-        return;
-      }
-
-      lastCapturedText = cleanText;
-      const entry = {
-        id: Date.now() + Math.random().toString(36).substr(2, 4),
-        platform: activePlatform,
-        speaker: speaker || 'Speaker',
-        text: cleanText,
-        timestamp: timestamp,
-        rawTime: Date.now()
-      };
-
-      captions.push(entry);
-      capturedCount = captions.length;
-      updateOverlayCount(capturedCount);
-
-      chrome.storage.local.set({ zeroscribe_captions: captions });
-      chrome.runtime.sendMessage({ action: 'CAPTION_UPDATED' }).catch(() => {});
-    });
+    } catch (e) {
+      // Ignore extension context invalidation exceptions
+    }
   }
 
   // Universal Scraper for Google Meet (item-level parsing)
