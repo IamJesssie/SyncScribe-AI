@@ -164,16 +164,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check Active Meeting Status
   async function checkActiveTabStatus() {
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const focused = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      let tab = focused.find(t => t.url && (t.url.includes('zoom.us') || t.url.includes('meet.google.com') || t.url.includes('teams.microsoft.com') || t.url.includes('teams.live.com')));
+      if (!tab) {
+        const allTabs = await chrome.tabs.query({});
+        tab = allTabs.find(t => t.url && (t.url.includes('zoom.us') || t.url.includes('meet.google.com') || t.url.includes('teams.microsoft.com') || t.url.includes('teams.live.com')));
+      }
+
       if (tab && tab.id) {
         chrome.tabs.sendMessage(tab.id, { action: 'GET_STATUS' }, (res) => {
           if (chrome.runtime.lastError || !res) {
-            platformLabel.innerText = 'Platform: Web Meeting';
             return;
           }
-          isRecording = res.isRecording;
           platformLabel.innerText = `Platform: ${res.platform}`;
-          updateRecordingUI(isRecording);
+          updateRecordingUI(res.isRecording);
         });
       }
     } catch (e) {}

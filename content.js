@@ -152,12 +152,12 @@
   // Universal Scraper for Google Meet (Tactiq-Style In-Page Caption & Speaker Parser)
   function scrapeGoogleMeet() {
     const captionNodes = document.querySelectorAll(`
-      div[jsname="YSStwy"],
-      div[jsname="r4nke"],
-      div[class*="a7vLMe"],
-      div[class*="nM4d2c"],
-      div[class*="n74d0c"],
-      div[class*="bhZpf"],
+      div[jsname="YSStwy"] div,
+      div[jsname="r4nke"] div,
+      div[class*="a7vLMe"] div,
+      div[class*="nM4d2c"] div,
+      div[class*="n74d0c"] div,
+      div[class*="bhZpf"] div,
       div[class*="iL4vfe"],
       div[class*="cM9B2"],
       div[class*="T4523c"],
@@ -166,11 +166,9 @@
     `);
 
     captionNodes.forEach(node => {
-      // Ignore root or large container elements
-      if (node.children.length > 20) return;
       const textContent = node.innerText ? node.innerText.trim() : '';
       if (!textContent || textContent.length < 2) return;
-      if (textContent.includes('meet.google.com') && textContent.length > 80) return;
+      if (textContent.includes('meet.google.com') || textContent.includes('Mute all') || textContent.includes('ZEROSCRIBE')) return;
 
       const lines = textContent.split('\n').map(l => l.trim()).filter(l => l.length > 0);
       if (lines.length === 0) return;
