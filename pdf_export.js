@@ -1,10 +1,10 @@
 /**
- * SyncScribe AI - Document Exporter Library (TXT & Formatted PDF)
+ * ZeroScribe AI - Document Exporter Library (TXT & Formatted PDF)
  */
 
-const SyncScribeExporter = {
+const ZeroScribeExporter = {
   // Export plain text transcript
-  exportTXT: function (captions, meetingName = 'SyncScribe_Meeting_Transcript') {
+  exportTXT: function (captions, meetingName = 'ZeroScribe_Meeting_Transcript') {
     if (!captions || captions.length === 0) {
       alert('No transcript items available to export.');
       return;
@@ -17,7 +17,7 @@ const SyncScribeExporter = {
 
     let content = `===========================================================\n`;
     let platform = captions[0]?.platform || 'Live Meeting';
-    content += `SYNCSCRIBE AI - MEETING TRANSCRIPT REPORT\n`;
+    content += `ZEROSCRIBE AI - MEETING TRANSCRIPT REPORT\n`;
     content += `Platform: ${platform}\n`;
     content += `Date: ${dateStr} at ${timeStr}\n`;
     content += `Total Captured Lines: ${captions.length}\n`;
@@ -40,7 +40,7 @@ const SyncScribeExporter = {
   },
 
   // Export PDF formatted transcript via modern printable print window
-  exportPDF: function (captions, meetingName = 'SyncScribe_Meeting_Transcript') {
+  exportPDF: function (captions, meetingName = 'ZeroScribe_Meeting_Transcript') {
     if (!captions || captions.length === 0) {
       alert('No transcript items available to export.');
       return;
@@ -71,7 +71,7 @@ const SyncScribeExporter = {
       <html>
       <head>
         <meta charset="utf-8">
-        <title>${escapeHtml(meetingName)} - SyncScribe AI</title>
+        <title>${escapeHtml(meetingName)} - ZeroScribe AI</title>
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
           body {
@@ -166,8 +166,8 @@ const SyncScribeExporter = {
       <body>
         <div class="header">
           <div>
-            <div class="brand">SyncScribe <span>AI</span></div>
-            <div class="sub">Unlimited Real-time Meeting Transcriber Report</div>
+            <div class="brand">ZeroScribe <span>AI</span></div>
+            <div class="sub">Zero-Backend Live Meeting Copilot & Relay Report</div>
           </div>
           <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer;">Save as PDF</button>
         </div>
@@ -183,7 +183,7 @@ const SyncScribeExporter = {
         </div>
 
         <div class="footer">
-          Generated automatically by SyncScribe AI Zero-Backend Extension • ${timeStr}
+          Generated automatically by ZeroScribe AI Extension • ${timeStr}
         </div>
 
         <script>

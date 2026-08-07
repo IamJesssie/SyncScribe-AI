@@ -1,5 +1,5 @@
 /**
- * SyncScribe AI - Extension UI Controller & Handler
+ * ZeroScribe AI - Extension UI Controller & Handler
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -87,9 +87,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load Preferences
   async function loadSettings() {
-    const data = await chrome.storage.local.get(['syncscribe_settings']);
-    if (data.syncscribe_settings) {
-      const s = data.syncscribe_settings;
+    const data = await chrome.storage.local.get(['zeroscribe_settings', 'syncscribe_settings']);
+    const s = data.zeroscribe_settings || data.syncscribe_settings;
+    if (s) {
       if (s.openRouterApiKey) apiKeyInput.value = s.openRouterApiKey;
       if (s.selectedModel) modelSelect.value = s.selectedModel;
       if (s.systemPrompt) systemPromptInput.value = s.systemPrompt;
@@ -116,7 +116,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       slackWebhookUrl: slackInput.value.trim(),
       teamsWebhookUrl: teamsInput.value.trim()
     };
-    await chrome.storage.local.set({ syncscribe_settings: settings });
+    await chrome.storage.local.set({ zeroscribe_settings: settings });
     showToast('Preferences saved successfully!');
   });
 
@@ -157,8 +157,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Fetch initial captions
   async function loadInitialCaptions() {
-    const data = await chrome.storage.local.get(['syncscribe_captions']);
-    renderTranscript(data.syncscribe_captions || []);
+    const data = await chrome.storage.local.get(['zeroscribe_captions', 'syncscribe_captions']);
+    renderTranscript(data.zeroscribe_captions || data.syncscribe_captions || []);
   }
 
   // Check Active Meeting Status
@@ -234,7 +234,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         slackWebhookUrl: slackInput.value.trim(),
         teamsWebhookUrl: teamsInput.value.trim()
       };
-      await chrome.storage.local.set({ syncscribe_settings: settings });
+      await chrome.storage.local.set({ zeroscribe_settings: settings });
 
       showToast('Dynamic System Prompt generated & saved in Settings!');
     } catch (err) {
@@ -385,7 +385,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           streamId = await new Promise((resolve) => {
             chrome.tabCapture.getMediaStreamId({ targetTabId: activeTab.id }, (id) => {
               if (chrome.runtime.lastError) {
-                console.warn('[SyncScribe UI] tabCapture gesture warning:', chrome.runtime.lastError.message);
+                console.warn('[ZeroScribe UI] tabCapture gesture warning:', chrome.runtime.lastError.message);
                 resolve(null);
               } else {
                 resolve(id);
@@ -394,7 +394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
         }
       } catch (e) {
-        console.warn('[SyncScribe UI] Tab query error:', e.message);
+        console.warn('[ZeroScribe UI] Tab query error:', e.message);
       }
 
       const response = await new Promise((resolve) => {
@@ -520,12 +520,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Action Button: Download TXT
   exportTxtBtn.addEventListener('click', () => {
-    SyncScribeExporter.exportTXT(currentCaptions);
+    ZeroScribeExporter.exportTXT(currentCaptions);
   });
 
   // Action Button: Download PDF
   exportPdfBtn.addEventListener('click', () => {
-    SyncScribeExporter.exportPDF(currentCaptions);
+    ZeroScribeExporter.exportPDF(currentCaptions);
   });
 
   // Action Button: Upload Transcript File
@@ -543,7 +543,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isAudio) {
       // Audio File Transcription via Deepgram Speech-to-Text
       uploadFileBtn.disabled = true;
-      uploadFileBtn.innerText = '🎙️ Transcribing Audio via Deepgram AI...';
+      uploadFileBtn.innerText = 'Transcribing Audio via Deepgram AI...';
       showToast(`Transcribing audio file "${file.name}"... This takes a few seconds.`);
 
       const reader = new FileReader();
@@ -571,7 +571,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
 
           currentCaptions = [...currentCaptions, ...parsedItems];
-          await chrome.storage.local.set({ syncscribe_captions: currentCaptions });
+          await chrome.storage.local.set({ zeroscribe_captions: currentCaptions });
 
           renderTranscript(currentCaptions);
           showToast(`Transcribed ${parsedItems.length} utterances from "${file.name}"!`);
@@ -579,7 +579,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           showToast(err.message, true);
         } finally {
           uploadFileBtn.disabled = false;
-          uploadFileBtn.innerText = '📁 Upload Transcript or Audio File (.m4a, .mp3, .wav, .txt)';
+          uploadFileBtn.innerText = 'Upload Transcript or Audio File';
           uploadFileInput.value = '';
         }
       };
@@ -598,7 +598,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         currentCaptions = [...currentCaptions, ...parsedItems];
-        await chrome.storage.local.set({ syncscribe_captions: currentCaptions });
+        await chrome.storage.local.set({ zeroscribe_captions: currentCaptions });
 
         renderTranscript(currentCaptions);
         showToast(`Uploaded ${parsedItems.length} lines from "${file.name}"!`);

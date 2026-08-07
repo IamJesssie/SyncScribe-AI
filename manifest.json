@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "SyncScribe AI - Unlimited Meeting Transcriber & WhatsApp Relay",
-  "short_name": "SyncScribe AI",
-  "version": "1.1.0",
-  "description": "Transcribes Google Meet, Zoom & Teams in real-time via tab audio capture, generates AI summaries via OpenRouter, and relays to WhatsApp Web zero-backend.",
+  "name": "ZeroScribe AI - Live Meeting Copilot & Multi-Channel Relay",
+  "short_name": "ZeroScribe AI",
+  "version": "1.2.0",
+  "description": "Zero-backend live meeting transcriber & AI copilot for Google Meet, Zoom & Teams with multi-channel WhatsApp, Slack & Teams relay.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -15,7 +15,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "SyncScribe AI — Click to capture tab audio & open panel"
+    "default_title": "ZeroScribe AI — Click to capture tab audio & open panel"
   },
   "background": {
     "service_worker": "background.js"

@@ -1,15 +1,15 @@
 /**
- * SyncScribe AI - WhatsApp Web Content Helper
+ * ZeroScribe AI - WhatsApp Web Content Helper
  * Ensures pre-filled transcript summary is ready in chat input box
  */
 
 (function () {
-  'use me strict';
+  'use strict';
 
-  if (window.__syncScribeWhatsAppInitialized) return;
-  window.__syncScribeWhatsAppInitialized = true;
+  if (window.__zeroScribeWhatsAppInitialized) return;
+  window.__zeroScribeWhatsAppInitialized = true;
 
-  console.log('[SyncScribe AI] WhatsApp Web Helper Active');
+  console.log('[ZeroScribe AI] WhatsApp Web Helper Active');
 
   // Display top notification toast on WhatsApp Web
   function showToast(message) {
@@ -60,7 +60,7 @@
       if (chatInput) {
         clearInterval(interval);
         chatInput.focus();
-        showToast('SyncScribe AI Summary pre-filled! Press Enter to send.');
+        showToast('ZeroScribe AI Summary pre-filled! Press Enter to send.');
       }
       if (attempts > 30) clearInterval(interval);
     }, 1000);

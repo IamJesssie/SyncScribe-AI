@@ -1,106 +1,71 @@
-# Implementation Plan: WhatsApp Group Relay & Custom AI System Prompt 🚀
+# Implementation Plan: ZeroScribe AI
 
-This document details the blueprint for implementing:
-1. **Zero-Backend WhatsApp Group Chat Relay Strategy** (Explaining how SyncScribe AI relays to WhatsApp Groups without n8n or servers).
-2. **Custom AI System Prompt Input & Storage** (Allowing users to customize, save, and persist system prompts used during OpenRouter AI summarization).
+This document outlines the architectural strategy, module breakdown, and development phases for ZeroScribe AI.
 
----
+## 1. System Architecture Overview
 
-## 1. Zero-Backend WhatsApp Group Chat Strategy (No n8n / Automation Platform)
+ZeroScribe AI operates entirely within the browser, functioning as a Manifest V3 extension.
 
-### Context & Challenge:
-WhatsApp does not provide a free, serverless API for bot injection into group chats without WhatsApp Business API / Twilio / Meta Cloud API (which require servers and paid subscriptions).
+### Core Components:
+- **Background Service Worker (`background.js`):** Orchestrates API calls, manages the OpenRouter fallback chain, and handles the multi-channel dispatch webhooks.
+- **Offscreen Document (`offscreen.js`):** Crucial for the Web Audio API. It captures and mixes Tab Audio (using `chrome.tabCapture`) and Microphone Audio (using `getUserMedia`), bypassing standard CC limitations.
+- **Content Scripts (`content.js`):** Injected into meeting tabs (Meet, Zoom, Teams) to provide the UI overlay and extract DOM-level context if needed.
+- **SidePanel / Popup UI:** The Raycast/Linear-style interface built with React/TailwindCSS (or vanilla JS/CSS) featuring custom SVG icons and keyboard-first navigation.
 
-### Solution: Direct WhatsApp Web Deep-Linking & Smart Group Relay
-Without any backend or n8n, **SyncScribe AI** achieves 100% free group chat relay via Chrome Extension deep-linking:
+## 2. Module Breakdown
 
-```
-┌──────────────────────────────────────┐
-│  Chrome Extension (SyncScribe AI)    │
-│  Generates AI Summary via OpenRouter │
-└──────────────────┬───────────────────┘
-                   │
-                   ▼
-┌──────────────────────────────────────┐
-│      WhatsApp Web Contact / Group    │
-│            Selection Picker          │
-│   https://web.whatsapp.com/send?text │
-└──────────────────┬───────────────────┘
-                   │ User selects target Group
-                   ▼
-┌──────────────────────────────────────┐
-│      Target WhatsApp Group Chat      │
-│  Pre-filled summary ready in group   │
-│  input box (Click Enter to send)     │
-└──────────────────────────────────────┘
-```
+### 2.1 Audio Processing Engine (Offscreen)
+- **Goal:** Capture high-fidelity dual audio.
+- **Implementation:**
+  - Request user media for mic.
+  - Request tab capture.
+  - Route both through `AudioContext` and mix via `GainNode`s.
+  - Stream chunks to the configured STT provider (Deepgram/Whisper) or local transcriber.
 
-1. **Group Picker Mode (No Phone Number):** When `Target WhatsApp Phone Number` is left blank in Settings, the extension opens `https://web.whatsapp.com/send?text=ENCODED_SUMMARY`. WhatsApp Web automatically presents a **"Share to Contact or Group"** picker modal. The user selects any group chat (e.g. *Engineering Team*, *Project Alpha*), and the summary is injected into that group's chat input box.
-2. **Direct Group Chat Auto-Focus:** `whatsapp_content.js` detects when WhatsApp Web loads with pre-filled text, focuses the active group chat input box, and displays a floating notification: `"SyncScribe AI: Summary ready in Group Chat! Press Enter to send."`
+### 2.2 Transcription & STT Pipeline
+- **Goal:** Real-time, deduplicated text.
+- **Implementation:**
+  - Handle WebSocket connections for live streaming STT.
+  - Implement a rolling buffer for speaker attribution.
+  - Process offline files via a drag-and-drop zone using REST APIs.
 
----
+### 2.3 AI Copilot & OpenRouter Fallback
+- **Goal:** Resilient, high-quality AI assistance.
+- **Implementation:**
+  - Define the 2-Stage Meta-Prompting strategy (Stage 1: Entity extraction, Stage 2: Synthesis & Formatting).
+  - Implement an asynchronous retry queue cascading through models: Llama 3.3 -> Gemini Flash -> DeepSeek R1 -> Qwen 2.5 -> Mistral.
 
-## 2. Proposed Code Changes
+### 2.4 Multi-Channel Relay
+- **Goal:** Frictionless export and sharing.
+- **Implementation:**
+  - **WhatsApp:** Inject scripts into `web.whatsapp.com` to auto-focus and prefill chat boxes using URL schemes or DOM manipulation.
+  - **Slack / Teams:** Configure standardized payload formats for incoming webhooks.
+  - **Export Engine:** Use `jspdf` for PDF generation and standard Blobs for TXT files.
 
-### Component 1: Extension UI (`popup.html` & `styles.css`)
-Add a new **Custom System Prompt** textarea in the Settings panel of `popup.html`, allowing users to define specific persona, format rules, or prompt guidelines.
+## 3. Development Phases
 
-#### [MODIFY] `popup.html`
-- Add System Prompt textarea field with default placeholder & hint.
+### Phase 1: Foundation & Audio Plumbing
+- Scaffold Manifest V3 extension.
+- Implement `offscreen.html` and `offscreen.js` for dual audio mixing.
+- Verify audio stream extraction.
 
-#### [MODIFY] `styles.css`
-- Ensure textareas in the settings panel have sleek dark glassmorphism styling, resize handles, and smooth scrollbars.
+### Phase 2: STT & UI Prototyping
+- Integrate Deepgram Nova-2 / Whisper STT.
+- Build the Raycast/Linear aesthetic UI (dark mode, SVGs, keyboard shortcuts).
+- Display live transcription with speaker diarization mockups.
 
----
+### Phase 3: AI Copilot Integration
+- Build the OpenRouter client with the fallback array logic.
+- Design and test the 2-stage meta-prompts for "Quick Cues" and "Suggest Questions".
+- Connect live STT transcript feed into the LLM context window.
 
-### Component 2: UI Controller & Storage (`popup.js`)
-- Bind `setting-systemprompt` DOM element.
-- Load stored system prompt from `chrome.storage.local` (defaulting to structured WhatsApp template if unset).
-- Save `systemPrompt` when the user clicks **Save Preferences**.
-- Pass user's system prompt during OpenRouter summary generation.
+### Phase 4: Relay & Export
+- Implement Webhook dispatchers (Slack, Teams).
+- Implement WhatsApp Web DOM injection.
+- Add PDF/TXT export functionality.
 
-#### [MODIFY] `popup.js`
-- Include `systemPrompt` in `loadSettings()` and `btn-save-settings` event handler.
-
----
-
-### Component 3: Background Worker & AI API (`background.js`)
-- Read saved `systemPrompt` from `chrome.storage.local` inside `generateOpenRouterSummary()`.
-- Use custom system prompt in the payload sent to OpenRouter API:
-  ```json
-  {
-    "model": "meta-llama/llama-3.3-70b-instruct:free",
-    "messages": [
-      { "role": "system", "content": "USER_CUSTOM_SYSTEM_PROMPT" },
-      { "role": "user", "content": "Transcript text..." }
-    ]
-  }
-  ```
-
-#### [MODIFY] `background.js`
-- Update `DEFAULT_SETTINGS` object to include default system prompt string.
-- Update `generateOpenRouterSummary()` to prioritize user-configured system prompt.
-
----
-
-### Component 4: Documentation (`README.md`)
-- Document the WhatsApp Group relay workflow and Custom System Prompt configuration.
-
-#### [MODIFY] `README.md`
-
----
-
-## 3. Verification Plan
-
-### Manual Verification
-1. **Test Custom System Prompt Persistence:**
-   - Open Extension -> Settings tab.
-   - Modify System Prompt (e.g., change to `"Summarize in 3 short bullet points with high urgency"`).
-   - Click **Save Preferences**. Close & reopen extension to verify prompt persists.
-2. **Test OpenRouter Generation with Custom Prompt:**
-   - Click **Summarize & Send to WhatsApp**.
-   - Verify generated summary in the AI Summary tab adheres to the customized system prompt instructions.
-3. **Test WhatsApp Group Relay:**
-   - Leave `Target Phone Number` blank in settings.
-   - Click **Summarize & Send to WhatsApp**.
-   - Verify WhatsApp Web opens with the group/contact selector or pre-filled message ready in the selected group chat.
+### Phase 5: Polish & Advanced Features
+- Refine the deduplication algorithms.
+- Conduct extensive testing on Google Meet, Zoom, and Teams web clients.
+- Finalize UI animations, focus states, and overall performance tuning.
+- Lay groundwork for the Future Roadmap (Vector Brain / MemPalace).

@@ -1,21 +1,21 @@
 /**
- * SyncScribe AI - Service Worker & State Manager
- * Handles transcript storage, OpenRouter AI summarization, and WhatsApp deep-linking
+ * ZeroScribe AI - Service Worker & State Manager
+ * Handles transcript storage, OpenRouter AI summarization, and multi-channel dispatch
  * 
- * Architecture: Sidecue-style tabCapture with user gesture preservation
+ * Architecture: TabCapture with Web Audio API mixing (offscreen.js)
  */
 
-const DEFAULT_SYSTEM_PROMPT = `You are SyncScribe AI, an expert meeting note taker. Your task is to analyze the following live meeting transcript and produce a clean, structured summary optimized for WhatsApp messaging.
+const DEFAULT_SYSTEM_PROMPT = `You are ZeroScribe AI, an expert meeting note taker. Your task is to analyze the following live meeting transcript and produce a clean, structured summary optimized for WhatsApp and messaging platforms.
 
-Strict WhatsApp Formatting Rules:
+Strict Formatting Rules:
 1. Use single asterisks for bold headers and key terms (e.g. *Meeting Executive Summary*).
-2. Use bullet points with emojis (📌, 🎯, 🚀, 💡, ⚡, 👥).
+2. Use bullet points with icons (📌, 🎯, 🚀, 💡, ⚡, 👥).
 3. Section Headers to include:
    - 📌 *Meeting Overview & Agenda*
    - 🎯 *Key Decisions Made*
    - ⚡ *Action Items & Next Steps* (Assign to specific team members if mentioned)
    - 👥 *Departmental Breakdown* (Software Engineering & Clinical / Business Reviewers)
-4. Keep the summary concise, actionable, and visually clear for easy reading on mobile WhatsApp screens.`;
+4. Keep the summary concise, actionable, and visually clear for mobile messaging screens.`;
 
 const DEFAULT_SETTINGS = {
   openRouterApiKey: '',
@@ -37,12 +37,12 @@ let captureActive = false;
 
 // ── Initialize Storage & SidePanel on install ───────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(['syncscribe_captions', 'syncscribe_settings'], (result) => {
-    if (!result.syncscribe_captions) {
-      chrome.storage.local.set({ syncscribe_captions: [] });
+  chrome.storage.local.get(['zeroscribe_captions', 'syncscribe_captions', 'zeroscribe_settings', 'syncscribe_settings'], (result) => {
+    if (!result.zeroscribe_captions && !result.syncscribe_captions) {
+      chrome.storage.local.set({ zeroscribe_captions: [] });
     }
-    if (!result.syncscribe_settings) {
-      chrome.storage.local.set({ syncscribe_settings: DEFAULT_SETTINGS });
+    if (!result.zeroscribe_settings && !result.syncscribe_settings) {
+      chrome.storage.local.set({ zeroscribe_settings: DEFAULT_SETTINGS });
     }
   });
 
@@ -52,111 +52,200 @@ chrome.runtime.onInstalled.addListener(() => {
   }
 });
 
-// ── CRITICAL: Capture tab audio on icon click (preserves user gesture!) ──
-// This is the Sidecue pattern: tabCapture.getMediaStreamId MUST be called
-// inside action.onClicked to preserve Chrome's user gesture context.
-chrome.action.onClicked.addListener((tab) => {
-  // Must call synchronously (no await) to preserve user gesture
-  startCaptureFlow(tab);
+// Helper to retrieve settings with migration fallback
+async function getStoredSettings() {
+  const data = await chrome.storage.local.get(['zeroscribe_settings', 'syncscribe_settings']);
+  return data.zeroscribe_settings || data.syncscribe_settings || DEFAULT_SETTINGS;
+}
+
+// Helper to retrieve captions with migration fallback
+async function getCaptions() {
+  const data = await chrome.storage.local.get(['zeroscribe_captions', 'syncscribe_captions']);
+  return data.zeroscribe_captions || data.syncscribe_captions || [];
+}
+
+async function saveCaptions(captions) {
+  await chrome.storage.local.set({ zeroscribe_captions: captions });
+}
+
+// ── Action Click Handler (Toolbar Icon Click) ───────────────────────────
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab || !tab.id) return;
+
+  // Open side panel for current window
+  if (chrome.sidePanel && chrome.sidePanel.open) {
+    try {
+      await chrome.sidePanel.open({ windowId: tab.windowId });
+    } catch (e) {
+      console.warn('[ZeroScribe AI] SidePanel open warning:', e.message);
+    }
+  }
+
+  // Toggle Tab Capture Audio Transcription
+  if (captureActive) {
+    await stopAudioCapture();
+  } else {
+    try {
+      await startAudioCaptureForTab(tab);
+    } catch (err) {
+      console.error('[ZeroScribe AI] Audio capture failed:', err);
+      broadcastToRuntime({ action: 'CAPTURE_ERROR', error: err.message });
+    }
+  }
 });
 
-function isUncapturableUrl(url) {
-  if (!url) return true;
-  return /^(chrome|chrome-extension|edge|about|file|view-source|devtools):/.test(url) ||
-    url.includes('chrome.google.com/webstore') ||
-    url.includes('chromewebstore.google.com');
-}
+// ── Start Audio Capture ────────────────────────────────────────────────
+async function startAudioCaptureForTab(tab) {
+  capturedTabId = tab.id;
+  capturedTabTitle = tab.title || 'Live Meeting';
 
-function startCaptureFlow(tab) {
-  if (!tab || !tab.id || isUncapturableUrl(tab.url)) {
-    // Can't capture this tab, just open side panel
-    chrome.sidePanel.open({ windowId: tab?.windowId }).catch(() => {});
-    return;
-  }
-
-  // If already capturing this tab, just open the side panel
-  if (pendingStreamId && capturedTabId === tab.id) {
-    chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
-    return;
-  }
-
-  // Release old stream if capturing a different tab
-  if (captureActive && capturedTabId !== tab.id) {
-    chrome.runtime.sendMessage({ action: 'ENGINE_STOP', target: 'offscreen' }).catch(() => {});
-    clearCaptureState();
-  }
-
-  // Get stream ID synchronously within user gesture context
-  chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }, (streamId) => {
-    if (chrome.runtime.lastError || !streamId) {
-      console.warn('[SyncScribe AI] tabCapture failed:', chrome.runtime.lastError?.message);
-      // Still open side panel so user can use other features
-      chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
-      return;
-    }
-
-    pendingStreamId = streamId;
-    capturedTabId = tab.id;
-    capturedTabTitle = tab.title || 'Active Tab';
-
-    console.log(`[SyncScribe AI] Tab audio captured: "${capturedTabTitle}" (streamId: ${streamId.substring(0, 20)}...)`);
-
-    // Immediately claim the stream in offscreen (streamId has ~5s TTL)
-    claimStreamInOffscreen(streamId).then(() => {
-      // Open side panel
-      chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
-
-      // Broadcast capture info to sidepanel/popup
-      broadcastToRuntime({
-        action: 'TAB_CAPTURED',
-        capturedTabId: tab.id,
-        capturedTabTitle: capturedTabTitle,
-        streamId: streamId
-      });
-    }).catch(err => {
-      console.error('[SyncScribe AI] Failed to claim stream:', err);
-      clearCaptureState();
-      chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+  // Request stream ID from tabCapture
+  pendingStreamId = await new Promise((resolve, reject) => {
+    chrome.tabCapture.getMediaStreamId({ targetTabId: capturedTabId }, (streamId) => {
+      if (chrome.runtime.lastError || !streamId) {
+        return reject(new Error(chrome.runtime.lastError?.message || 'Failed to capture tab audio stream.'));
+      }
+      resolve(streamId);
     });
   });
-}
 
-async function claimStreamInOffscreen(streamId) {
+  console.log(`[ZeroScribe AI] Tab audio captured: "${capturedTabTitle}" (streamId: ${pendingStreamId.substring(0, 20)}...)`);
+
+  // Ensure offscreen document exists
   await ensureOffscreenDocument();
+
+  // Wait for offscreen document to report ready
   await waitForOffscreenReady();
+
+  // Claim stream in offscreen document
+  try {
+    const claimRes = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: 'CLAIM_STREAM',
+        target: 'offscreen',
+        streamId: pendingStreamId
+      }, resolve);
+    });
+    if (!claimRes || !claimRes.success) {
+      console.error('[ZeroScribe AI] Failed to claim stream:', claimRes?.error);
+    }
+  } catch (err) {
+    console.warn('[ZeroScribe AI] Claim stream warning:', err.message);
+  }
+
+  // Start transcription engine
+  const settings = await getStoredSettings();
 
   const response = await new Promise((resolve) => {
     chrome.runtime.sendMessage({
-      action: 'CLAIM_STREAM',
+      action: 'ENGINE_START',
       target: 'offscreen',
-      streamId: streamId
+      streamId: pendingStreamId,
+      sttApiKey: settings.sttApiKey,
+      sttProvider: settings.sttProvider
     }, resolve);
   });
 
   if (!response || !response.success) {
-    throw new Error(response?.error || 'Failed to claim audio stream in offscreen document.');
+    throw new Error(response?.error || 'Failed to start transcription engine.');
   }
+
+  captureActive = true;
+  broadcastToRuntime({ action: 'CAPTURE_STATUS', active: true, tabTitle: capturedTabTitle });
 }
 
-function clearCaptureState() {
+// ── Start Audio Capture from SidePanel Gesture ───────────────────────────
+async function startAudioCaptureWithStreamId(streamId, tabTitle) {
+  pendingStreamId = streamId;
+  capturedTabTitle = tabTitle || 'Live Meeting';
+
+  console.log(`[ZeroScribe AI] Starting capture with pre-acquired streamId: ${streamId.substring(0, 20)}...`);
+
+  await ensureOffscreenDocument();
+  await waitForOffscreenReady();
+
+  try {
+    await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: 'CLAIM_STREAM',
+        target: 'offscreen',
+        streamId: pendingStreamId
+      }, resolve);
+    });
+  } catch (e) {
+    console.warn('[ZeroScribe AI] Stream claim notice:', e.message);
+  }
+
+  const settings = await getStoredSettings();
+
+  const response = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({
+      action: 'ENGINE_START',
+      target: 'offscreen',
+      streamId: pendingStreamId,
+      sttApiKey: settings.sttApiKey,
+      sttProvider: settings.sttProvider
+    }, resolve);
+  });
+
+  if (!response || !response.success) {
+    throw new Error(response?.error || 'Failed to start transcription engine.');
+  }
+
+  captureActive = true;
+  broadcastToRuntime({ action: 'CAPTURE_STATUS', active: true, tabTitle: capturedTabTitle });
+}
+
+// ── Stop Audio Capture ──────────────────────────────────────────────────
+async function stopAudioCapture() {
+  try {
+    await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'ENGINE_STOP', target: 'offscreen' }, resolve);
+    });
+  } catch (e) {
+    console.warn('[ZeroScribe AI] Stop capture notice:', e.message);
+  }
+
+  captureActive = false;
   pendingStreamId = null;
   capturedTabId = null;
   capturedTabTitle = null;
-  captureActive = false;
+
+  broadcastToRuntime({ action: 'CAPTURE_STATUS', active: false });
 }
 
-function broadcastToRuntime(msg) {
-  chrome.runtime.sendMessage(msg).catch(() => {});
+// ── Offscreen Document Management ───────────────────────────────────────
+async function ensureOffscreenDocument() {
+  const existing = await chrome.offscreen.hasDocument();
+  if (!existing) {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['USER_MEDIA', 'AUDIO_PLAYBACK'],
+      justification: 'Capture and process tab audio stream for live meeting transcription.'
+    });
+  }
 }
 
-// ── Helper to get all stored captions ───────────────────────────────────
-async function getCaptions() {
-  const data = await chrome.storage.local.get(['syncscribe_captions']);
-  return data.syncscribe_captions || [];
+async function waitForOffscreenReady(maxRetries = 20) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const res = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'OFFSCREEN_PING', target: 'offscreen' }, resolve);
+      });
+      if (res && res.pong) return true;
+    } catch (e) {
+      // Offscreen not ready yet
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return false;
 }
 
-async function saveCaptions(captions) {
-  await chrome.storage.local.set({ syncscribe_captions: captions });
+// ── Broadcast Helper ────────────────────────────────────────────────────
+function broadcastToRuntime(message) {
+  chrome.runtime.sendMessage(message).catch(() => {
+    // Popup or sidepanel might be closed
+  });
 }
 
 // ── Listen to incoming runtime messages ─────────────────────────────────
@@ -175,569 +264,518 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'ENGINE_INTERIM') {
-    // Broadcast interim results to popup/sidepanel for live display
     broadcastToRuntime({
       action: 'INTERIM_TRANSCRIPT',
-      speaker: request.speaker || 'Speaker',
-      text: request.text
+      text: request.text,
+      speaker: request.speaker || 'Speaker'
     });
     return;
   }
 
   if (request.action === 'NEW_CAPTION') {
-    handleNewCaption(request.payload);
-  } else if (request.action === 'CAPTION_UPDATED') {
-    // Relay from content.js DOM scraper
-    broadcastToRuntime({ action: 'CAPTION_UPDATED' });
-  } else if (request.action === 'CLEAR_TRANSCRIPT') {
-    saveCaptions([]).then(() => {
-      sendResponse({ status: 'cleared' });
-    });
-    return true;
-  } else if (request.action === 'GENERATE_AI_SUMMARY') {
-    generateOpenRouterSummary(request.customApiKey, request.customModel, request.customSystemPrompt, request.useAutoMetaPrompt)
-      .then(summary => sendResponse({ success: true, summary }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true;
-  } else if (request.action === 'SYNTHESIZE_SYSTEM_PROMPT') {
-    handleSynthesizeSystemPrompt(request.customApiKey, request.customModel)
-      .then(prompt => sendResponse({ success: true, systemPrompt: prompt }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true;
-  } else if (request.action === 'ASK_AI_COPILOT') {
-    handleAskAiCopilot(request.question, request.customApiKey, request.customModel)
-      .then(answer => sendResponse({ success: true, answer }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true;
-  } else if (request.action === 'TRANSCRIBE_AUDIO') {
-    handleTranscribeAudio(request.audioDataUrl, request.mimeType, request.fileName, request.customSttKey, request.customSttProvider)
-      .then(items => sendResponse({ success: true, captions: items }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true;
-  } else if (request.action === 'START_LIVE_AUDIO_CAPTURE') {
-    // Called from popup/sidepanel after tab is already captured
-    handleStartLiveCapture(request).then(res => sendResponse(res)).catch(err => sendResponse({ success: false, error: err.message }));
-    return true;
-  } else if (request.action === 'STOP_LIVE_AUDIO_CAPTURE') {
-    chrome.runtime.sendMessage({ action: 'ENGINE_STOP', target: 'offscreen' }).catch(() => {});
-    captureActive = false;
+    handleNewCaption(request.data);
     sendResponse({ success: true });
     return true;
-  } else if (request.action === 'GET_CAPTURE_INFO') {
-    sendResponse({
-      hasPendingCapture: !!pendingStreamId,
-      capturedTabId,
-      capturedTabTitle,
-      captureActive
+  }
+
+  if (request.action === 'GET_CAPTIONS') {
+    getCaptions().then((captions) => sendResponse({ captions }));
+    return true;
+  }
+
+  if (request.action === 'CLEAR_TRANSCRIPT') {
+    saveCaptions([]).then(() => {
+      broadcastToRuntime({ action: 'TRANSCRIPT_UPDATED', captions: [] });
+      sendResponse({ success: true });
     });
     return true;
-  } else if (request.action === 'SEND_TO_WHATSAPP') {
-    openWhatsAppRelay(request.text, request.phone)
-      .then(res => sendResponse({ success: true }))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+  }
+
+  if (request.action === 'GENERATE_AI_SUMMARY') {
+    handleGenerateAiSummary(sendResponse);
     return true;
-  } else if (request.action === 'SEND_TO_SLACK') {
-    sendSlackRelay(request.text, request.slackWebhookUrl)
-      .then(res => sendResponse(res))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+  }
+
+  if (request.action === 'ASK_AI_COPILOT') {
+    handleAskAiCopilot(request.question, sendResponse);
     return true;
-  } else if (request.action === 'SEND_TO_TEAMS') {
-    sendTeamsRelay(request.text, request.teamsWebhookUrl)
-      .then(res => sendResponse(res))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+  }
+
+  if (request.action === 'GENERATE_AUTO_SYSTEM_PROMPT') {
+    handleGenerateAutoSystemPrompt(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'DISPATCH_WHATSAPP') {
+    handleDispatchWhatsApp(request.phone, sendResponse);
+    return true;
+  }
+
+  if (request.action === 'DISPATCH_SLACK') {
+    handleDispatchSlack(request.webhookUrl, sendResponse);
+    return true;
+  }
+
+  if (request.action === 'DISPATCH_TEAMS') {
+    handleDispatchTeams(request.webhookUrl, sendResponse);
+    return true;
+  }
+
+  if (request.action === 'START_TAB_CAPTURE_VIA_GESTURE') {
+    startAudioCaptureWithStreamId(request.streamId, request.tabTitle)
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (request.action === 'STOP_TAB_CAPTURE') {
+    stopAudioCapture().then(() => sendResponse({ success: true }));
+    return true;
+  }
+
+  if (request.action === 'GET_CAPTURE_STATUS') {
+    sendResponse({ active: captureActive, tabTitle: capturedTabTitle });
+    return true;
+  }
+
+  if (request.action === 'TRANSCRIBE_AUDIO') {
+    handleTranscribeAudioFile(request, sendResponse);
     return true;
   }
 });
 
-// ── Start live capture (uses already-claimed stream or streamId passed from UI) ────────────
-async function handleStartLiveCapture(request) {
-  const targetStreamId = request?.streamId || pendingStreamId;
+// ── Handle New Caption with Cross-Source Deduplication ───────────────────
+async function handleNewCaption(newCap) {
+  if (!newCap || !newCap.text || !newCap.text.trim()) return;
 
-  if (targetStreamId) {
-    pendingStreamId = targetStreamId;
-    try {
-      await claimStreamInOffscreen(targetStreamId);
-    } catch (e) {
-      console.warn('[SyncScribe AI] Stream claim notice:', e.message);
-    }
-  }
+  const current = await getCaptions();
+  const textTrimmed = newCap.text.trim();
 
-  await ensureOffscreenDocument();
-  await waitForOffscreenReady();
-
-  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
-  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
-
-  const response = await new Promise((resolve) => {
-    chrome.runtime.sendMessage({
-      action: 'ENGINE_START',
-      target: 'offscreen',
-      streamId: pendingStreamId,
-      sttApiKey: settings.sttApiKey,
-      sttProvider: settings.sttProvider
-    }, resolve);
+  // Deduplication check: ignore identical text within 4 seconds
+  const isDuplicate = current.some((c) => {
+    const timeDiff = Math.abs(newCap.rawTime - c.rawTime);
+    return timeDiff < 4000 && c.text.trim() === textTrimmed;
   });
 
-  if (!response || !response.success) {
-    throw new Error(response?.error || 'Failed to start transcription engine.');
-  }
+  if (isDuplicate) return;
 
-  captureActive = true;
-  return { success: true, tabTitle: capturedTabTitle, method: response.method };
+  const updated = [...current, newCap];
+  await saveCaptions(updated);
+  broadcastToRuntime({ action: 'NEW_CAPTION_ADDED', caption: newCap, totalCount: updated.length });
 }
 
-// ── Add caption to array with robust cross-source deduplication & speaker upgrading ──
-async function handleNewCaption(captionEntry) {
-  if (!captionEntry || !captionEntry.text || captionEntry.text.trim() === '') return;
-  const cleanText = captionEntry.text.trim();
-  const captions = await getCaptions();
-  
-  // Look at recent 12 entries to check for text similarity or speaker upgrade
-  const recentSliceIndex = Math.max(0, captions.length - 12);
-  const recentCaptions = captions.slice(recentSliceIndex);
+// ── Model Fallback Array ────────────────────────────────────────────────
+const FREE_MODEL_FALLBACKS = [
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'google/gemini-2.0-flash-lite-preview-02-05:free',
+  'deepseek/deepseek-r1:free',
+  'qwen/qwen-2.5-72b-instruct:free',
+  'mistralai/mistral-small-24b-instruct-2501:free'
+];
 
-  const existingMatch = recentCaptions.find(c => {
-    const textA = c.text.toLowerCase();
-    const textB = cleanText.toLowerCase();
-    return textA === textB || textA.includes(textB) || textB.includes(textA);
+async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, userMessage) {
+  const modelList = [selectedModel];
+  FREE_MODEL_FALLBACKS.forEach((m) => {
+    if (!modelList.includes(m)) modelList.push(m);
   });
-
-  if (existingMatch) {
-    // Speaker Upgrade: If existing entry has generic speaker ("Speaker" / "Participant")
-    // and new entry has a real name (e.g. "markus", "Jessie Noel Lapure"), upgrade it!
-    if ((existingMatch.speaker === 'Speaker' || existingMatch.speaker === 'Participant') && 
-        captionEntry.speaker && captionEntry.speaker !== 'Speaker' && captionEntry.speaker !== 'Participant') {
-      existingMatch.speaker = captionEntry.speaker;
-    }
-
-    // Text extension upgrade: if new text is longer/fuller, update text
-    if (cleanText.length > existingMatch.text.length) {
-      existingMatch.text = cleanText;
-      existingMatch.timestamp = captionEntry.timestamp;
-    }
-
-    await saveCaptions(captions);
-    broadcastToRuntime({ action: 'CAPTION_UPDATED', captionsCount: captions.length });
-    return;
-  }
-
-  // Brand new entry
-  captionEntry.text = cleanText;
-  captions.push(captionEntry);
-  await saveCaptions(captions);
-
-  broadcastToRuntime({
-    action: 'CAPTION_UPDATED',
-    captionsCount: captions.length,
-    latestCaption: captionEntry
-  });
-}
-
-// ── Stage 1: Meta-Prompt Synthesizer ────────────────────────────────────
-async function synthesizeMetaPrompt(fullTranscript, apiKey, model, baseHeaders) {
-  console.log('[SyncScribe AI] Stage 1: Synthesizing Dynamic Meta-Prompt...');
-  
-  const metaPromptInstruction = `You are an AI Meta-Prompt Generator. Analyze the following meeting transcript and generate a highly targeted, customized SYSTEM PROMPT for an Executive AI Note Taker summarizing this specific meeting.
-
-The generated system prompt must instruct the AI to:
-1. Dynamically classify the meeting title & category.
-2. Group participants into their specific roles (e.g. Software Engineers, Clinical Reviewers, HR, Executive Stakeholders).
-3. Create 3-5 adaptive sections based on the actual topics discussed (e.g. Hardware/Onboarding, Software Platform Requirements, Operational Rules).
-4. Never omit exact numbers, dates, deadlines, metrics, product codes, or tool names.
-5. Use WhatsApp formatting (*bolding*, emojis, bullet points, solid line dividers ──────────).
-
-Output ONLY the custom system prompt text itself. Do not include markdown code block quotes or conversational intro.`;
-
-  const metaRequestBody = {
-    model: model,
-    messages: [
-      { role: 'system', content: metaPromptInstruction },
-      { role: 'user', content: `Analyze this transcript and write the custom system prompt:\n\n${fullTranscript.slice(0, 12000)}` }
-    ],
-    temperature: 0.3
-  };
-
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: baseHeaders,
-    body: JSON.stringify(metaRequestBody)
-  });
-
-  if (!response.ok) return null;
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || null;
-}
-
-// ── Standalone System Prompt Generator for Settings UI ──────────────────
-async function handleSynthesizeSystemPrompt(overrideKey, overrideModel) {
-  const captions = await getCaptions();
-  if (captions.length === 0) {
-    throw new Error('No transcript available to analyze. Please record or upload a transcript file first.');
-  }
-
-  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
-  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
-
-  const apiKey = overrideKey || settings.openRouterApiKey;
-  const model = overrideModel || settings.selectedModel || 'meta-llama/llama-3.3-70b-instruct:free';
-
-  const fullTranscript = captions.map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`).join('\n');
-
-  const headers = {
-    'Content-Type': 'application/json',
-    'HTTP-Referer': 'https://github.com/SyncScribeAI',
-    'X-Title': 'SyncScribe AI Extension'
-  };
-
-  if (apiKey && apiKey.trim() !== '') {
-    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
-  }
-
-  const prompt = await synthesizeMetaPrompt(fullTranscript, apiKey, model, headers);
-  if (!prompt) {
-    throw new Error('Failed to generate dynamic system prompt from OpenRouter.');
-  }
-  return prompt;
-}
-
-// ── OpenRouter API Fetcher with Automatic Model Fallback Chain ─────────
-async function fetchOpenRouterWithFallback(requestedModel, messages, headers, temperature = 0.3) {
-  const fallbackList = [
-    requestedModel,
-    'meta-llama/llama-3.3-70b-instruct:free',
-    'google/gemini-2.0-flash-lite-preview-02-05:free',
-    'qwen/qwen-2.5-72b-instruct:free',
-    'deepseek/deepseek-r1:free',
-    'mistralai/mistral-small-24b-instruct-2501:free'
-  ];
-
-  const modelsToTry = Array.from(new Set(fallbackList.filter(m => m && m.trim().length > 0)));
 
   let lastError = null;
 
-  for (const m of modelsToTry) {
+  for (const m of modelList) {
     try {
-      console.log(`[SyncScribe AI] Requesting OpenRouter Model: ${m}`);
+      console.log(`[ZeroScribe AI] Requesting OpenRouter Model: ${m}`);
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
-        headers: headers,
+        headers: {
+          'Authorization': `Bearer ${apiKey || 'free'}`,
+          'HTTP-Referer': 'https://github.com/ZeroScribeAI',
+          'X-Title': 'ZeroScribe AI Extension',
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({
           model: m,
-          messages: messages,
-          temperature: temperature
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage }
+          ]
         })
       });
 
       if (response.ok) {
         const data = await response.json();
         const content = data.choices?.[0]?.message?.content;
-        if (content && content.trim().length > 0) {
-          console.log(`[SyncScribe AI] Successfully received response from model: ${m}`);
-          return content;
+        if (content && content.trim()) {
+          console.log(`[ZeroScribe AI] Successfully received response from model: ${m}`);
+          return content.trim();
         }
-      } else {
+      }
+
+      const errText = await response.text().catch(() => '');
+      let detail = errText;
+      try {
+        const parsed = JSON.parse(errText);
+        detail = parsed.error?.message || errText;
+      } catch (e) {}
+
+      lastError = `Model ${m} error (${response.status}): ${detail}`;
+      console.warn(`[ZeroScribe AI] ${lastError}`);
+    } catch (e) {
+      lastError = `Network exception trying model ${m}: ${e.message}`;
+      console.warn(`[ZeroScribe AI] ${lastError}`);
+    }
+  }
+
+  throw new Error(lastError || 'All AI models failed to generate a response. Please check network or API key.');
+}
+
+// ── OpenRouter AI Summarization ──────────────────────────────────────────
+async function handleGenerateAiSummary(sendResponse) {
+  try {
+    const captions = await getCaptions();
+    if (captions.length === 0) {
+      return sendResponse({ success: false, error: 'No transcript lines captured yet.' });
+    }
+
+    const settings = await getStoredSettings();
+
+    const formattedTranscript = captions
+      .map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`)
+      .join('\n');
+
+    let systemPromptToUse = settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+
+    // Optional Stage 1: Auto Meta-Prompting
+    if (settings.useAutoMetaPrompt) {
+      try {
+        console.log('[ZeroScribe AI] Stage 1: Synthesizing Dynamic Meta-Prompt...');
+        const metaPromptInput = `Analyze this live meeting transcript and extract:
+1. Meeting Title & Domain
+2. Key Participant Roles (e.g. Software Engineers, Clinical Reviewers, HR)
+3. Operational Priorities & Requirements.
+
+Then write a customized System Prompt for an AI meeting assistant that will format this meeting's final summary perfectly. Return ONLY the custom system prompt text.
+
+Transcript:
+${formattedTranscript.slice(0, 3000)}`;
+
+        const generatedMetaPrompt = await fetchOpenRouterWithFallback(
+          settings.openRouterApiKey,
+          settings.selectedModel,
+          "You are an expert prompt engineer specializing in meeting intelligence.",
+          metaPromptInput
+        );
+
+        if (generatedMetaPrompt && generatedMetaPrompt.length > 50) {
+          systemPromptToUse = generatedMetaPrompt + "\n\n" + DEFAULT_SYSTEM_PROMPT;
+          console.log('[ZeroScribe AI] Stage 1 Meta-Prompt Synthesized Successfully!');
+        }
+      } catch (e) {
+        console.warn('[ZeroScribe AI] Stage 1 Meta-Prompt failed, falling back to base system prompt:', e);
+      }
+    }
+
+    const userPrompt = `Generate a structured meeting summary based on the transcript below:\n\n${formattedTranscript}`;
+
+    const summaryText = await fetchOpenRouterWithFallback(
+      settings.openRouterApiKey,
+      settings.selectedModel,
+      systemPromptToUse,
+      userPrompt
+    );
+
+    sendResponse({ success: true, summary: summaryText });
+  } catch (err) {
+    console.error('[ZeroScribe AI] Summary Generation Error:', err);
+    sendResponse({ success: false, error: err.message });
+  }
+}
+
+// ── AI Copilot Handler ───────────────────────────────────────────────────
+async function handleAskAiCopilot(userQuestion, sendResponse) {
+  try {
+    const captions = await getCaptions();
+    const settings = await getStoredSettings();
+
+    const formattedTranscript = captions.length > 0
+      ? captions.map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`).join('\n')
+      : '(No live captions recorded yet)';
+
+    const systemInstruction = `You are ZeroScribe AI Copilot, a real-time intelligent meeting assistant for software engineers, clinical reviewers, and operations leads during corporate meetings (e.g. San Diego Eye Bank x Cebu Team).
+
+Your objective:
+- Provide direct, clear, high-confidence answers to help the user respond during the meeting.
+- If asked "Suggest Questions to Ask", list 3-5 sharp, relevant questions based on what participants just said.
+- Keep responses concise, well-formatted, and ready to read at a glance.`;
+
+    const promptMessage = `Live Meeting Transcript Context:\n${formattedTranscript}\n\nUser Question / Quick Cue:\n${userQuestion}`;
+
+    const answer = await fetchOpenRouterWithFallback(
+      settings.openRouterApiKey,
+      settings.selectedModel,
+      systemInstruction,
+      promptMessage
+    );
+
+    sendResponse({ success: true, answer: answer });
+  } catch (err) {
+    console.error('[ZeroScribe AI] Copilot Error:', err);
+    sendResponse({ success: false, error: err.message });
+  }
+}
+
+// ── Auto System Prompt Generator Handler ────────────────────────────────
+async function handleGenerateAutoSystemPrompt(sendResponse) {
+  try {
+    const captions = await getCaptions();
+    if (captions.length === 0) {
+      return sendResponse({ success: false, error: 'No transcript recorded yet. Start live transcription or upload a file first.' });
+    }
+
+    const settings = await getStoredSettings();
+
+    const formattedTranscript = captions
+      .map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`)
+      .join('\n')
+      .slice(0, 4000);
+
+    const promptInput = `You are an expert AI prompt engineer. Analyze this meeting transcript and output a customized, high-precision System Prompt for an AI meeting assistant that will format meeting summaries for this specific team context.
+
+Transcript snippet:
+${formattedTranscript}
+
+Output ONLY the complete, ready-to-use System Prompt text. Include clear sections for Meeting Persona, Key Metrics to Track, Action Item Format, and Tone.`;
+
+    const generatedPrompt = await fetchOpenRouterWithFallback(
+      settings.openRouterApiKey,
+      settings.selectedModel,
+      "You are a master AI prompt engineer.",
+      promptInput
+    );
+
+    sendResponse({ success: true, systemPrompt: generatedPrompt });
+  } catch (err) {
+    console.error('[ZeroScribe AI] System Prompt Generation Error:', err);
+    sendResponse({ success: false, error: err.message });
+  }
+}
+
+// ── Multi-Channel Dispatch Handlers ─────────────────────────────────────
+async function handleDispatchWhatsApp(targetPhone, sendResponse) {
+  try {
+    const captions = await getCaptions();
+    if (captions.length === 0) {
+      return sendResponse({ success: false, error: 'No transcript captured to dispatch.' });
+    }
+
+    const settings = await getStoredSettings();
+
+    const formattedTranscript = captions
+      .map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`)
+      .join('\n');
+
+    const summaryText = await fetchOpenRouterWithFallback(
+      settings.openRouterApiKey,
+      settings.selectedModel,
+      settings.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+      `Format this meeting summary for WhatsApp dispatch:\n\n${formattedTranscript}`
+    );
+
+    const phone = targetPhone || settings.targetPhone || '';
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+
+    const encodedText = encodeURIComponent(summaryText);
+    const waUrl = cleanPhone
+      ? `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodedText}`
+      : `https://web.whatsapp.com/send?text=${encodedText}`;
+
+    chrome.tabs.create({ url: waUrl });
+    sendResponse({ success: true, message: 'Opening WhatsApp Web...' });
+  } catch (err) {
+    sendResponse({ success: false, error: err.message });
+  }
+}
+
+async function handleDispatchSlack(webhookUrl, sendResponse) {
+  try {
+    const captions = await getCaptions();
+    if (captions.length === 0) {
+      return sendResponse({ success: false, error: 'No transcript captured to dispatch.' });
+    }
+
+    const settings = await getStoredSettings();
+    const url = webhookUrl || settings.slackWebhookUrl;
+
+    if (!url) {
+      return sendResponse({ success: false, error: 'Slack Webhook URL is missing in Settings.' });
+    }
+
+    const formattedTranscript = captions
+      .map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`)
+      .join('\n');
+
+    const summaryText = await fetchOpenRouterWithFallback(
+      settings.openRouterApiKey,
+      settings.selectedModel,
+      settings.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+      `Format this meeting summary for Slack posting:\n\n${formattedTranscript}`
+    );
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: summaryText })
+    });
+
+    if (res.ok) {
+      sendResponse({ success: true, message: 'Dispatched to Slack successfully!' });
+    } else {
+      const errText = await res.text();
+      sendResponse({ success: false, error: `Slack error: ${errText}` });
+    }
+  } catch (err) {
+    sendResponse({ success: false, error: err.message });
+  }
+}
+
+async function handleDispatchTeams(webhookUrl, sendResponse) {
+  try {
+    const captions = await getCaptions();
+    if (captions.length === 0) {
+      return sendResponse({ success: false, error: 'No transcript captured to dispatch.' });
+    }
+
+    const settings = await getStoredSettings();
+    const url = webhookUrl || settings.teamsWebhookUrl;
+
+    if (!url) {
+      return sendResponse({ success: false, error: 'MS Teams Webhook URL is missing in Settings.' });
+    }
+
+    const formattedTranscript = captions
+      .map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`)
+      .join('\n');
+
+    const summaryText = await fetchOpenRouterWithFallback(
+      settings.openRouterApiKey,
+      settings.selectedModel,
+      settings.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+      `Format this meeting summary for MS Teams posting:\n\n${formattedTranscript}`
+    );
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: summaryText })
+    });
+
+    if (res.ok) {
+      sendResponse({ success: true, message: 'Dispatched to MS Teams successfully!' });
+    } else {
+      const errText = await res.text();
+      sendResponse({ success: false, error: `MS Teams error: ${errText}` });
+    }
+  } catch (err) {
+    sendResponse({ success: false, error: err.message });
+  }
+}
+
+// ── Audio File STT Handler (Deepgram Nova-2 / Whisper API) ─────────────
+async function handleTranscribeAudioFile(request, sendResponse) {
+  const { audioDataUrl, mimeType, fileName, customSttKey, customSttProvider } = request;
+
+  try {
+    const settings = await getStoredSettings();
+    const provider = customSttProvider || settings.sttProvider || 'deepgram';
+    const apiKey = customSttKey || settings.sttApiKey;
+
+    if (provider === 'deepgram') {
+      console.log(`[ZeroScribe AI] Sending audio file "${fileName}" to Deepgram Nova-2 API...`);
+      
+      const base64Data = audioDataUrl.split(',')[1];
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      const headers = { 'Content-Type': mimeType || 'audio/mp3' };
+      if (apiKey) {
+        headers['Authorization'] = `Token ${apiKey}`;
+      }
+
+      const dgUrl = 'https://api.deepgram.com/v1/listen?model=nova-2&diarize=true&punctuate=true&smart_formatting=true';
+      const response = await fetch(dgUrl, {
+        method: 'POST',
+        headers: headers,
+        body: bytes.buffer
+      });
+
+      if (!response.ok) {
         const errText = await response.text();
-        let detail = errText;
-        try {
-          const jsonErr = JSON.parse(errText);
-          detail = jsonErr.error?.message || errText;
-        } catch (e) {}
-        console.warn(`[SyncScribe AI] Model ${m} failed (${response.status}): ${detail}`);
-        lastError = new Error(`OpenRouter Error (${response.status}): ${detail}`);
+        throw new Error(`Deepgram STT API Error (${response.status}): ${errText}`);
       }
-    } catch (e) {
-      console.warn(`[SyncScribe AI] Network exception trying model ${m}:`, e.message);
-      lastError = e;
-    }
-  }
 
-  throw lastError || new Error('All OpenRouter AI free models are currently busy or unavailable. Please try again in a few seconds or enter an OpenRouter API key in Settings.');
-}
+      const dgResult = await response.json();
+      const words = dgResult.results?.channels?.[0]?.alternatives?.[0]?.words || [];
 
-// ── AI Copilot Real-Time Q&A Handler ────────────────────────────────────
-async function handleAskAiCopilot(question, overrideKey, overrideModel) {
-  const captions = await getCaptions();
-  if (captions.length === 0) {
-    throw new Error('No meeting transcript available to analyze yet. Start recording or upload a transcript file first.');
-  }
-
-  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
-  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
-
-  const apiKey = overrideKey || settings.openRouterApiKey;
-  const model = overrideModel || settings.selectedModel || 'meta-llama/llama-3.3-70b-instruct:free';
-
-  const fullTranscript = captions.map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`).join('\n');
-
-  const systemInstruction = `You are SyncScribe AI Copilot, a real-time intelligent meeting assistant for software engineers, clinical reviewers, and operations leads during high-stakes corporate meetings (e.g. San Diego Eye Bank x Cebu Team).
-Analyze the meeting transcript below and provide a concise, direct, highly professional answer to the user's question.
-
-Guidelines:
-1. If the user asks "What should I answer right now?", analyze what HR, the host, or speaker recently asked, and craft a clear, confident, professional response for the user to speak immediately.
-2. If the user asks for suggested questions, generate 3-5 smart, highly relevant questions they can ask the host, HR, or client speakers right now.
-3. Highlight key technical details, clinical rules, dates, or deadlines mentioned.
-4. Be concise and direct (2-4 bullet points max) so the user can quickly scan the answer during a live meeting.`;
-
-  const headers = {
-    'Content-Type': 'application/json',
-    'HTTP-Referer': 'https://github.com/SyncScribeAI',
-    'X-Title': 'SyncScribe AI Extension'
-  };
-
-  if (apiKey && apiKey.trim() !== '') {
-    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
-  }
-
-  const messages = [
-    { role: 'system', content: systemInstruction },
-    { role: 'user', content: `MEETING TRANSCRIPT:\n${fullTranscript}\n\nUSER QUESTION: ${question}` }
-  ];
-
-  return await fetchOpenRouterWithFallback(model, messages, headers, 0.3);
-}
-
-// ── Stage 2: Generate Summary using OpenRouter Models ───────────────────
-async function generateOpenRouterSummary(overrideKey, overrideModel, overrideSystemPrompt, overrideUseMetaPrompt) {
-  const captions = await getCaptions();
-  if (captions.length === 0) {
-    throw new Error('No transcript data captured yet. Please record or upload transcript text first.');
-  }
-
-  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
-  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
-
-  const apiKey = overrideKey || settings.openRouterApiKey;
-  const model = overrideModel || settings.selectedModel || 'meta-llama/llama-3.3-70b-instruct:free';
-  const useMetaPrompt = (overrideUseMetaPrompt !== undefined) ? overrideUseMetaPrompt : (settings.useAutoMetaPrompt !== false);
-
-  const fullTranscript = captions.map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`).join('\n');
-
-  const headers = {
-    'Content-Type': 'application/json',
-    'HTTP-Referer': 'https://github.com/SyncScribeAI',
-    'X-Title': 'SyncScribe AI Extension'
-  };
-
-  if (apiKey && apiKey.trim() !== '') {
-    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
-  }
-
-  let effectiveSystemPrompt = overrideSystemPrompt || settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
-
-  if (useMetaPrompt) {
-    try {
-      const synthesizedPrompt = await synthesizeMetaPrompt(fullTranscript, apiKey, model, headers);
-      if (synthesizedPrompt && synthesizedPrompt.trim().length > 50) {
-        console.log('[SyncScribe AI] Stage 1 Meta-Prompt Synthesized Successfully!');
-        effectiveSystemPrompt = synthesizedPrompt;
+      if (words.length === 0) {
+        return sendResponse({ success: false, error: 'Deepgram found no spoken words in audio file.' });
       }
-    } catch (e) {
-      console.warn('[SyncScribe AI] Stage 1 Meta-Prompt failed, falling back to base system prompt:', e);
-    }
-  }
 
-  const messages = [
-    { role: 'system', content: effectiveSystemPrompt },
-    { role: 'user', content: `Here is the meeting transcript:\n\n${fullTranscript}` }
-  ];
+      // Diarization grouping by speaker
+      const captions = [];
+      let currentSpeaker = null;
+      let currentText = '';
+      let startTime = null;
 
-  return await fetchOpenRouterWithFallback(model, messages, headers, 0.4);
-}
+      words.forEach((w) => {
+        const speakerName = w.speaker !== undefined ? `Speaker ${w.speaker + 1}` : 'Speaker';
+        if (currentSpeaker === null) {
+          currentSpeaker = speakerName;
+          startTime = w.start;
+        }
 
-// ── Relay: WhatsApp Web ─────────────────────────────────────────────────
-async function openWhatsAppRelay(textSummary, overridePhone) {
-  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
-  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
-
-  const phone = (overridePhone !== undefined ? overridePhone : settings.targetPhone) || '';
-  const cleanPhone = phone.replace(/[^0-9]/g, '');
-
-  const encodedText = encodeURIComponent(textSummary);
-  let whatsappUrl = `https://web.whatsapp.com/send?text=${encodedText}`;
-
-  if (cleanPhone) {
-    whatsappUrl = `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodedText}`;
-  }
-
-  await chrome.tabs.create({ url: whatsappUrl });
-  return true;
-}
-
-// ── Relay: Slack Webhook / Web Link ─────────────────────────────────────
-async function sendSlackRelay(textSummary, overrideWebhook) {
-  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
-  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
-  const webhookUrl = overrideWebhook || settings.slackWebhookUrl;
-
-  if (webhookUrl && webhookUrl.trim().startsWith('http')) {
-    const response = await fetch(webhookUrl.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: textSummary })
-    });
-    if (!response.ok) throw new Error(`Slack Webhook HTTP Error ${response.status}`);
-    return { success: true, method: 'webhook' };
-  } else {
-    await chrome.tabs.create({ url: 'https://app.slack.com/' });
-    return { success: true, method: 'tab' };
-  }
-}
-
-// ── Relay: MS Teams Webhook / Web Link ──────────────────────────────────
-async function sendTeamsRelay(textSummary, overrideWebhook) {
-  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
-  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
-  const webhookUrl = overrideWebhook || settings.teamsWebhookUrl;
-
-  if (webhookUrl && webhookUrl.trim().startsWith('http')) {
-    const response = await fetch(webhookUrl.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'message',
-        attachments: [{
-          contentType: 'application/vnd.microsoft.card.adaptive',
-          content: {
-            $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-            type: 'AdaptiveCard',
-            version: '1.2',
-            body: [{ type: 'TextBlock', text: textSummary, wrap: true }]
-          }
-        }]
-      })
-    });
-    if (!response.ok) throw new Error(`Teams Webhook HTTP Error ${response.status}`);
-    return { success: true, method: 'webhook' };
-  } else {
-    await chrome.tabs.create({ url: 'https://teams.microsoft.com/' });
-    return { success: true, method: 'tab' };
-  }
-}
-
-// ── Handle Audio File Speech-to-Text Transcription ──────────────────────
-async function handleTranscribeAudio(audioDataUrl, mimeType, fileName, customSttKey, customSttProvider) {
-  const settingsData = await chrome.storage.local.get(['syncscribe_settings']);
-  const settings = settingsData.syncscribe_settings || DEFAULT_SETTINGS;
-
-  const sttKey = customSttKey || settings.sttApiKey;
-  const sttProvider = customSttProvider || settings.sttProvider || 'deepgram';
-
-  if (sttProvider === 'deepgram' || (sttKey && sttKey.trim().length > 10)) {
-    if (!sttKey || sttKey.trim() === '') {
-      throw new Error('Deepgram API Key is required for Deepgram Nova-2 Audio Transcription. Please enter your key in Settings or sign up at console.deepgram.com ($200 free credit!).');
-    }
-    return await transcribeDeepgram(audioDataUrl, mimeType, sttKey.trim(), fileName);
-  } else {
-    throw new Error('Please configure a Deepgram or Speech-to-Text API Key in Settings to transcribe audio files.');
-  }
-}
-
-// ── Deepgram Nova-2 Speech-to-Text with Speaker Diarization ─────────────
-async function transcribeDeepgram(audioDataUrl, mimeType, apiKey, fileName) {
-  console.log(`[SyncScribe AI] Sending audio file "${fileName}" to Deepgram Nova-2 API...`);
-
-  const base64Part = audioDataUrl.split(',')[1];
-  const binaryString = atob(base64Part);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-
-  const cleanMime = (mimeType && mimeType.includes('/')) ? mimeType.split(';')[0] : 'audio/mp3';
-  const deepgramUrl = 'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&utterances=true';
-
-  const response = await fetch(deepgramUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Token ${apiKey}`,
-      'Content-Type': cleanMime
-    },
-    body: bytes.buffer
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let errDetail = errorText;
-    try {
-      const errJson = JSON.parse(errorText);
-      errDetail = errJson.err_msg || errJson.reason || errorText;
-    } catch (e) {}
-    throw new Error(`Deepgram API Error (${response.status}): ${errDetail}`);
-  }
-
-  const data = await response.json();
-  const utterances = data.results?.utterances || [];
-
-  if (utterances.length > 0) {
-    return utterances.map(u => ({
-      id: Date.now() + Math.random().toString(36).substr(2, 4),
-      platform: `Audio File (${fileName})`,
-      speaker: `Speaker ${u.speaker !== undefined ? u.speaker + 1 : 1}`,
-      timestamp: formatSecondsToTime(u.start),
-      text: u.transcript ? u.transcript.trim() : ''
-    })).filter(item => item.text !== '');
-  }
-
-  const alt = data.results?.channels?.[0]?.alternatives?.[0];
-  if (alt && alt.transcript && alt.transcript.trim() !== '') {
-    return [{
-      id: Date.now() + Math.random().toString(36).substr(2, 4),
-      platform: `Audio File (${fileName})`,
-      speaker: 'Speaker 1',
-      timestamp: '00:00',
-      text: alt.transcript.trim()
-    }];
-  }
-
-  throw new Error('No Speech-to-Text transcript returned from Deepgram.');
-}
-
-function formatSecondsToTime(seconds) {
-  const secNum = parseInt(seconds, 10) || 0;
-  const mins = Math.floor(secNum / 60);
-  const secs = secNum % 60;
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-}
-
-// ── Ensure Offscreen Document exists ────────────────────────────────────
-async function ensureOffscreenDocument() {
-  const existingContexts = await chrome.runtime.getContexts({
-    contextTypes: ['OFFSCREEN_DOCUMENT']
-  });
-  if (existingContexts.length > 0) return;
-
-  await chrome.offscreen.createDocument({
-    url: 'offscreen.html',
-    reasons: ['USER_MEDIA'],
-    justification: 'Tab audio capture and real-time speech-to-text transcription'
-  });
-}
-
-function waitForOffscreenReady(maxWait = 5000) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    function ping() {
-      if (Date.now() - start > maxWait) {
-        reject(new Error('Offscreen document ready timeout'));
-        return;
-      }
-      chrome.runtime.sendMessage({ action: 'OFFSCREEN_PING', target: 'offscreen' }, (resp) => {
-        if (chrome.runtime.lastError || !resp?.ready) {
-          setTimeout(ping, 100);
+        if (speakerName !== currentSpeaker) {
+          captions.push({
+            id: Date.now() + Math.random().toString(36).substr(2, 4),
+            platform: 'Audio File (Deepgram)',
+            speaker: currentSpeaker,
+            text: currentText.trim(),
+            timestamp: formatSecondsToTimestamp(startTime),
+            rawTime: Date.now()
+          });
+          currentSpeaker = speakerName;
+          currentText = w.punctuated_word || w.word;
+          startTime = w.start;
         } else {
-          resolve();
+          currentText += ' ' + (w.punctuated_word || w.word);
         }
       });
+
+      if (currentText.trim()) {
+        captions.push({
+          id: Date.now() + Math.random().toString(36).substr(2, 4),
+          platform: 'Audio File (Deepgram)',
+          speaker: currentSpeaker,
+          text: currentText.trim(),
+          timestamp: formatSecondsToTimestamp(startTime),
+          rawTime: Date.now()
+        });
+      }
+
+      sendResponse({ success: true, captions: captions });
+    } else {
+      sendResponse({ success: false, error: `STT Provider "${provider}" unsupported for direct file upload.` });
     }
-    ping();
-  });
+  } catch (err) {
+    console.error('[ZeroScribe AI] Audio File STT Error:', err);
+    sendResponse({ success: false, error: err.message });
+  }
 }
 
-// ── Tab close auto-cleanup ──────────────────────────────────────────────
-chrome.tabs.onRemoved.addListener((tabId) => {
-  if (tabId === capturedTabId) {
-    chrome.runtime.sendMessage({ action: 'ENGINE_STOP', target: 'offscreen' }).catch(() => {});
-    clearCaptureState();
-    broadcastToRuntime({ action: 'SESSION_ENDED', reason: 'tab_closed' });
-  }
-});
+function formatSecondsToTimestamp(seconds) {
+  if (seconds === null || seconds === undefined) return '00:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}

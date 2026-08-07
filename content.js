@@ -1,15 +1,15 @@
 /**
- * SyncScribe AI - Universal DOM Caption Scraper
+ * ZeroScribe AI - Universal DOM Caption Scraper
  * Supports Google Meet, Zoom Web, and MS Teams
  */
 
 (function () {
-  'use me strict';
+  'use strict';
 
-  if (window.__syncScribeInitialized) return;
-  window.__syncScribeInitialized = true;
+  if (window.__zeroScribeInitialized) return;
+  window.__zeroScribeInitialized = true;
 
-  console.log('[SyncScribe AI] Universal Caption Scraper Initialized');
+  console.log('[ZeroScribe AI] Universal Caption Scraper Initialized');
 
   let isRecording = false;
   let captionObserver = null;
@@ -30,10 +30,10 @@
 
   // Create or update floating overlay indicator on meeting tab
   function createOverlayWidget() {
-    if (document.getElementById('syncscribe-overlay')) return;
+    if (document.getElementById('zeroscribe-overlay')) return;
 
     overlayWidget = document.createElement('div');
-    overlayWidget.id = 'syncscribe-overlay';
+    overlayWidget.id = 'zeroscribe-overlay';
     overlayWidget.style.cssText = `
       position: fixed;
       top: 16px;
@@ -56,25 +56,25 @@
     `;
 
     overlayWidget.innerHTML = `
-      <div id="syncscribe-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e;"></div>
+      <div id="zeroscribe-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e;"></div>
       <div>
-        <div style="font-weight: 600; font-size: 12px; letter-spacing: 0.5px; color: #94a3b8;">SYNCSCRIBE AI</div>
-        <div id="syncscribe-status-text" style="font-weight: 500; font-size: 13px; color: #e2e8f0;">Listening (${activePlatform})...</div>
+        <div style="font-weight: 600; font-size: 12px; letter-spacing: 0.5px; color: #94a3b8;">ZEROSCRIBE AI</div>
+        <div id="zeroscribe-status-text" style="font-weight: 500; font-size: 13px; color: #e2e8f0;">Listening (${activePlatform})...</div>
       </div>
-      <div id="syncscribe-count-badge" style="background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; border-radius: 20px; padding: 2px 8px; font-weight: 600; font-size: 11px;">0 lines</div>
+      <div id="zeroscribe-count-badge" style="background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; border-radius: 20px; padding: 2px 8px; font-weight: 600; font-size: 11px;">0 lines</div>
     `;
 
     document.body.appendChild(overlayWidget);
   }
 
   function updateOverlayCount(count) {
-    const badge = document.getElementById('syncscribe-count-badge');
+    const badge = document.getElementById('zeroscribe-count-badge');
     if (badge) badge.innerText = `${count} lines`;
   }
 
   function updateOverlayStatus(text, color) {
-    const statusText = document.getElementById('syncscribe-status-text');
-    const statusDot = document.getElementById('syncscribe-status-dot');
+    const statusText = document.getElementById('zeroscribe-status-text');
+    const statusDot = document.getElementById('zeroscribe-status-dot');
     if (statusText) statusText.innerText = text;
     if (statusDot) {
       statusDot.style.background = color;
@@ -91,8 +91,8 @@
 
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    chrome.storage.local.get(['syncscribe_captions'], (res) => {
-      let captions = res.syncscribe_captions || [];
+    chrome.storage.local.get(['zeroscribe_captions', 'syncscribe_captions'], (res) => {
+      let captions = res.zeroscribe_captions || res.syncscribe_captions || [];
       
       // Look at recent 12 entries to check for text similarity or speaker upgrade
       const recentSliceIndex = Math.max(0, captions.length - 12);
@@ -116,7 +116,7 @@
         }
 
         lastCapturedText = cleanText;
-        chrome.storage.local.set({ syncscribe_captions: captions });
+        chrome.storage.local.set({ zeroscribe_captions: captions });
         chrome.runtime.sendMessage({ action: 'CAPTION_UPDATED' }).catch(() => {});
         return;
       }
@@ -135,14 +135,13 @@
       capturedCount = captions.length;
       updateOverlayCount(capturedCount);
 
-      chrome.storage.local.set({ syncscribe_captions: captions });
+      chrome.storage.local.set({ zeroscribe_captions: captions });
       chrome.runtime.sendMessage({ action: 'CAPTION_UPDATED' }).catch(() => {});
     });
   }
 
   // Universal Scraper for Google Meet (item-level parsing)
   function scrapeGoogleMeet() {
-    // Select ONLY individual item caption nodes in Google Meet (never the parent container div[jsname="r4n84b"])
     const candidateNodes = document.querySelectorAll(`
       div[jsname="YSStwy"],
       div[class*="a7vLMe"],
@@ -160,16 +159,13 @@
       const rawText = node.innerText ? node.innerText.trim() : '';
       if (!rawText || rawText.length < 2) return;
 
-      // Ignore UI buttons, call titles, and URL strings
       if (rawText.includes('meet.google.com') || rawText.includes('People') || rawText.includes('Mute all')) return;
 
-      // Speaker element selector inside individual caption block
       const speakerEl = node.querySelector('div[class*="Yz62fc"], span.zs7W8d, div[class*="M4t5We"], div.Z6B62d, div[class*="T4523c"], span[class*="zs7W8d"]');
       let speaker = speakerEl ? speakerEl.innerText.trim() : '';
 
       const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-      // If speaker wasn't found via selector, check if line 1 is speaker name
       if (!speaker && lines.length >= 2) {
         if (lines[0].length < 35) {
           speaker = lines[0];
@@ -279,7 +275,6 @@
     } else if (activePlatform === 'MS Teams') {
       scrapeMSTeams();
     } else {
-      // Generic fallback for open web meeting tools
       const ariaLiveElements = document.querySelectorAll('[aria-live="polite"], [aria-live="assertive"]');
       ariaLiveElements.forEach(el => {
         if (el.innerText && el.innerText.length > 5) {
@@ -289,7 +284,6 @@
     }
   }
 
-  // Throttled Scraper Runner to prevent CPU spikes and infinite loops
   let scrapeTimer = null;
   function scheduleScrape() {
     if (scrapeTimer) return;
@@ -307,11 +301,10 @@
     updateOverlayStatus(`Listening (${activePlatform})...`, '#22c55e');
 
     captionObserver = new MutationObserver((mutations) => {
-      // Ignore mutations originating from SyncScribe's own overlay widget
       const isExternalMutation = mutations.some(m => {
         const target = m.target;
         if (!target) return false;
-        if (target.id === 'syncscribe-overlay' || (target.closest && target.closest('#syncscribe-overlay'))) {
+        if (target.id === 'zeroscribe-overlay' || (target.closest && target.closest('#zeroscribe-overlay'))) {
           return false;
         }
         return true;
@@ -328,8 +321,7 @@
       characterData: true
     });
 
-    // Interval safety fallback (every 2 seconds)
-    window.__syncScribeInterval = setInterval(scheduleScrape, 2000);
+    window.__zeroScribeInterval = setInterval(scheduleScrape, 2000);
   }
 
   // Stop DOM Observer
@@ -339,8 +331,8 @@
       captionObserver.disconnect();
       captionObserver = null;
     }
-    if (window.__syncScribeInterval) {
-      clearInterval(window.__syncScribeInterval);
+    if (window.__zeroScribeInterval) {
+      clearInterval(window.__zeroScribeInterval);
     }
     if (scrapeTimer) {
       clearTimeout(scrapeTimer);

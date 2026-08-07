@@ -1,5 +1,5 @@
 /**
- * SyncScribe AI - Offscreen Audio Processing Engine
+ * ZeroScribe AI - Offscreen Audio Processing Engine
  * 
  * Architecture (Sidecue-style):
  * 1. CLAIM_STREAM: Parks the tab MediaStream before the streamId expires
@@ -80,7 +80,7 @@ async function handleClaim(streamId) {
   handleStop();
 
   state = 'claiming';
-  console.log('[SyncScribe Offscreen] Claiming tab audio stream...');
+  console.log('[ZeroScribe Offscreen] Claiming tab audio stream...');
 
   try {
     tabStream = await navigator.mediaDevices.getUserMedia({
@@ -92,10 +92,10 @@ async function handleClaim(streamId) {
       },
     });
     state = 'claimed';
-    console.log('[SyncScribe Offscreen] Tab stream claimed and parked!');
+    console.log('[ZeroScribe Offscreen] Tab stream claimed and parked!');
   } catch (err) {
     state = 'idle';
-    console.error('[SyncScribe Offscreen] Failed to claim stream:', err);
+    console.error('[ZeroScribe Offscreen] Failed to claim stream:', err);
     throw err;
   }
 }
@@ -113,7 +113,7 @@ async function handleStart(streamId, apiKey, provider) {
   }
 
   state = 'running';
-  console.log('[SyncScribe Offscreen] Starting audio engine...');
+  console.log('[ZeroScribe Offscreen] Starting audio engine...');
 
   try {
     // ── Playback Context: User hears the tab audio at native sample rate ──
@@ -128,7 +128,7 @@ async function handleStart(streamId, apiKey, provider) {
     const audioTrack = tabStream.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.addEventListener('ended', () => {
-        console.warn('[SyncScribe Offscreen] Tab audio track ended');
+        console.warn('[ZeroScribe Offscreen] Tab audio track ended');
         broadcast({ action: 'SESSION_ENDED', reason: 'tab_audio_lost' });
         handleStop();
       });
@@ -146,9 +146,9 @@ async function handleStart(streamId, apiKey, provider) {
       tabSource.connect(dest);
       micSource.connect(dest);
       combinedStream = dest.stream;
-      console.log('[SyncScribe Offscreen] Successfully mixed Tab Audio + Mic Audio!');
+      console.log('[ZeroScribe Offscreen] Successfully mixed Tab Audio + Mic Audio!');
     } catch (micErr) {
-      console.info('[SyncScribe Offscreen] Mic mixing notice:', micErr.message);
+      console.info('[ZeroScribe Offscreen] Mic mixing notice:', micErr.message);
     }
 
     // ── Start STT engine ──
@@ -162,7 +162,7 @@ async function handleStart(streamId, apiKey, provider) {
       return { method: 'webspeech' };
     }
   } catch (err) {
-    console.error('[SyncScribe Offscreen] Engine start failed:', err);
+    console.error('[ZeroScribe Offscreen] Engine start failed:', err);
     handleStop();
     throw err;
   }
@@ -173,12 +173,12 @@ async function handleMicCapture(apiKey, provider) {
   handleStop();
 
   state = 'running';
-  console.log('[SyncScribe Offscreen] Starting microphone capture...');
+  console.log('[ZeroScribe Offscreen] Starting microphone capture...');
 
   try {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
   } catch (err) {
-    console.warn('[SyncScribe Offscreen] Mic access denied, trying Web Speech API without stream:', err.message);
+    console.warn('[ZeroScribe Offscreen] Mic access denied, trying Web Speech API without stream:', err.message);
     tabStream = null;
   }
 
@@ -197,7 +197,7 @@ async function handleMicCapture(apiKey, provider) {
 function startWebSpeechSTT(stream) {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    console.warn('[SyncScribe Offscreen] Web Speech API not available.');
+    console.warn('[ZeroScribe Offscreen] Web Speech API not available.');
     broadcast({ action: 'ENGINE_ERROR', error: 'Web Speech API not supported in this browser.' });
     return;
   }
@@ -224,9 +224,9 @@ function startWebSpeechSTT(stream) {
   };
 
   recognition.onerror = (err) => {
-    console.warn('[SyncScribe Offscreen] Speech Recognition error:', err.error);
+    console.warn('[ZeroScribe Offscreen] Speech Recognition error:', err.error);
     if (err.error === 'not-allowed') {
-      console.info('[SyncScribe Offscreen] Microphone permission notice: not-allowed');
+      console.info('[ZeroScribe Offscreen] Microphone permission notice: not-allowed');
       state = 'idle';
       return;
     }
@@ -253,10 +253,10 @@ function startWebSpeechSTT(stream) {
 
   try {
     recognition.start();
-    console.log('[SyncScribe Offscreen] Web Speech API STT started!');
+    console.log('[ZeroScribe Offscreen] Web Speech API STT started!');
     broadcast({ action: 'ENGINE_STATUS', status: 'listening' });
   } catch (e) {
-    console.error('[SyncScribe Offscreen] Failed to start Web Speech API:', e);
+    console.error('[ZeroScribe Offscreen] Failed to start Web Speech API:', e);
   }
 }
 
@@ -267,7 +267,7 @@ function startDeepgramSTT(stream, apiKey) {
   deepgramSocket = new WebSocket(wsUrl, ['token', apiKey]);
 
   deepgramSocket.onopen = () => {
-    console.log('[SyncScribe Offscreen] Deepgram WebSocket Connected!');
+    console.log('[ZeroScribe Offscreen] Deepgram WebSocket Connected!');
     broadcast({ action: 'ENGINE_STATUS', status: 'listening' });
     setupPCMPipeline(stream);
   };
@@ -294,7 +294,7 @@ function startDeepgramSTT(stream, apiKey) {
   };
 
   deepgramSocket.onerror = (err) => {
-    console.warn('[SyncScribe Offscreen] Deepgram WebSocket error, falling back to Web Speech API:', err);
+    console.warn('[ZeroScribe Offscreen] Deepgram WebSocket error, falling back to Web Speech API:', err);
     if (deepgramSocket) {
       try { deepgramSocket.close(); } catch (e) {}
       deepgramSocket = null;
@@ -304,7 +304,7 @@ function startDeepgramSTT(stream, apiKey) {
   };
 
   deepgramSocket.onclose = (event) => {
-    console.log('[SyncScribe Offscreen] Deepgram WebSocket closed:', event.code, event.reason);
+    console.log('[ZeroScribe Offscreen] Deepgram WebSocket closed:', event.code, event.reason);
   };
 }
 
@@ -339,9 +339,9 @@ function setupPCMPipeline(stream) {
     processor.connect(silentGain);
     silentGain.connect(captureContext.destination);
 
-    console.log('[SyncScribe Offscreen] PCM pipeline connected (16kHz)');
+    console.log('[ZeroScribe Offscreen] PCM pipeline connected (16kHz)');
   } catch (err) {
-    console.error('[SyncScribe Offscreen] PCM pipeline error:', err);
+    console.error('[ZeroScribe Offscreen] PCM pipeline error:', err);
   }
 }
 
@@ -349,7 +349,7 @@ function setupPCMPipeline(stream) {
 function handleStop() {
   if (state === 'idle' || state === 'stopping') return;
   state = 'stopping';
-  console.log('[SyncScribe Offscreen] Stopping engine...');
+  console.log('[ZeroScribe Offscreen] Stopping engine...');
 
   // Stop Speech Recognition
   if (recognition) {
@@ -390,7 +390,7 @@ function handleStop() {
   }
 
   state = 'idle';
-  console.log('[SyncScribe Offscreen] Engine stopped.');
+  console.log('[ZeroScribe Offscreen] Engine stopped.');
 }
 
 // ── Broadcast helper ────────────────────────────────────────────────────
