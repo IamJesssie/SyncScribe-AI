@@ -301,7 +301,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === 'GENERATE_AUTO_SYSTEM_PROMPT') {
+  if (request.action === 'GENERATE_AUTO_SYSTEM_PROMPT' || request.action === 'SYNTHESIZE_SYSTEM_PROMPT') {
     handleGenerateAutoSystemPrompt(sendResponse);
     return true;
   }
@@ -390,15 +390,28 @@ async function handleNewCaption(newCap) {
 
 // ── Model Fallback Array ────────────────────────────────────────────────
 const FREE_MODEL_FALLBACKS = [
+  'inclusionai/ling-3.0-flash:free',
+  'inclusionai/ling-3.0-flash',
   'meta-llama/llama-3.3-70b-instruct:free',
   'google/gemini-2.0-flash-lite-preview-02-05:free',
+  'google/gemini-2.0-flash-exp:free',
   'deepseek/deepseek-r1:free',
-  'qwen/qwen-2.5-72b-instruct:free',
-  'mistralai/mistral-small-24b-instruct-2501:free'
+  'qwen/qwen-2.5-72b-instruct:free'
 ];
 
 async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, userMessage) {
-  const modelList = [selectedModel];
+  const modelList = [];
+
+  if (selectedModel && selectedModel.trim()) {
+    const sm = selectedModel.trim();
+    modelList.push(sm);
+    if (!sm.endsWith(':free')) {
+      modelList.push(`${sm}:free`);
+    } else {
+      modelList.push(sm.replace(':free', ''));
+    }
+  }
+
   FREE_MODEL_FALLBACKS.forEach((m) => {
     if (!modelList.includes(m)) modelList.push(m);
   });
