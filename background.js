@@ -19,7 +19,7 @@ Strict Formatting Rules:
 
 const DEFAULT_SETTINGS = {
   openRouterApiKey: '',
-  selectedModel: 'meta-llama/llama-3.3-70b-instruct:free',
+  selectedModel: 'inclusionai/ling-3.0-flash',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   useAutoMetaPrompt: true,
   sttProvider: 'webspeech',
@@ -292,17 +292,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'GENERATE_AI_SUMMARY') {
-    handleGenerateAiSummary(sendResponse);
+    handleGenerateAiSummary(request, sendResponse);
     return true;
   }
 
   if (request.action === 'ASK_AI_COPILOT') {
-    handleAskAiCopilot(request.question, sendResponse);
+    handleAskAiCopilot(request, sendResponse);
     return true;
   }
 
   if (request.action === 'GENERATE_AUTO_SYSTEM_PROMPT' || request.action === 'SYNTHESIZE_SYSTEM_PROMPT') {
-    handleGenerateAutoSystemPrompt(sendResponse);
+    handleGenerateAutoSystemPrompt(request, sendResponse);
     return true;
   }
 
@@ -390,13 +390,14 @@ async function handleNewCaption(newCap) {
 
 // ── Model Fallback Array ────────────────────────────────────────────────
 const FREE_MODEL_FALLBACKS = [
-  'inclusionai/ling-3.0-flash:free',
   'inclusionai/ling-3.0-flash',
+  'inclusionai/ling-3.0-flash:free',
   'meta-llama/llama-3.3-70b-instruct:free',
+  'meta-llama/llama-3.3-70b-instruct',
   'google/gemini-2.0-flash-lite-preview-02-05:free',
   'google/gemini-2.0-flash-exp:free',
   'deepseek/deepseek-r1:free',
-  'qwen/qwen-2.5-72b-instruct:free'
+  'qwen/qwen-2.5-coder-32b-instruct:free'
 ];
 
 async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, userMessage) {
@@ -418,9 +419,10 @@ async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, 
 
   let lastError = null;
 
-  for (const m of modelList) {
+  for (let i = 0; i < modelList.length; i++) {
+    const m = modelList[i];
     try {
-      console.log(`[ZeroScribe AI] Requesting OpenRouter Model: ${m}`);
+      console.log(`[ZeroScribe AI] Requesting OpenRouter Model (${i + 1}/${modelList.length}): ${m}`);
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -454,6 +456,16 @@ async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, 
         detail = parsed.error?.message || errText;
       } catch (e) {}
 
+      // Auto-extract recommended replacement slug if OpenRouter 404s with "use this slug instead: <slug>"
+      const slugMatch = detail.match(/use this slug instead:\s*([a-zA-Z0-9_\-\.\/]+)/i);
+      if (slugMatch && slugMatch[1]) {
+        const suggestedSlug = slugMatch[1].trim();
+        if (!modelList.includes(suggestedSlug)) {
+          console.log(`[ZeroScribe AI] Auto-adding suggested replacement model slug: ${suggestedSlug}`);
+          modelList.splice(i + 1, 0, suggestedSlug);
+        }
+      }
+
       lastError = `Model ${m} error (${response.status}): ${detail}`;
       console.warn(`[ZeroScribe AI] ${lastError}`);
     } catch (e) {
@@ -466,7 +478,7 @@ async function fetchOpenRouterWithFallback(apiKey, selectedModel, systemPrompt, 
 }
 
 // ── OpenRouter AI Summarization ──────────────────────────────────────────
-async function handleGenerateAiSummary(sendResponse) {
+async function handleGenerateAiSummary(request, sendResponse) {
   try {
     const captions = await getCaptions();
     if (captions.length === 0) {
@@ -474,15 +486,19 @@ async function handleGenerateAiSummary(sendResponse) {
     }
 
     const settings = await getStoredSettings();
+    const apiKey = (request && request.customApiKey) || settings.openRouterApiKey;
+    const selectedModel = (request && request.customModel) || settings.selectedModel;
+    const customPrompt = (request && request.customSystemPrompt) || settings.systemPrompt;
+    const useAutoMetaPrompt = request && request.useAutoMetaPrompt !== undefined ? request.useAutoMetaPrompt : settings.useAutoMetaPrompt;
 
     const formattedTranscript = captions
       .map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`)
       .join('\n');
 
-    let systemPromptToUse = settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    let systemPromptToUse = customPrompt || DEFAULT_SYSTEM_PROMPT;
 
     // Optional Stage 1: Auto Meta-Prompting
-    if (settings.useAutoMetaPrompt) {
+    if (useAutoMetaPrompt) {
       try {
         console.log('[ZeroScribe AI] Stage 1: Synthesizing Dynamic Meta-Prompt...');
         const metaPromptInput = `Analyze this live meeting transcript and extract:
@@ -496,8 +512,8 @@ Transcript:
 ${formattedTranscript.slice(0, 3000)}`;
 
         const generatedMetaPrompt = await fetchOpenRouterWithFallback(
-          settings.openRouterApiKey,
-          settings.selectedModel,
+          apiKey,
+          selectedModel,
           "You are an expert prompt engineer specializing in meeting intelligence.",
           metaPromptInput
         );
@@ -514,8 +530,8 @@ ${formattedTranscript.slice(0, 3000)}`;
     const userPrompt = `Generate a structured meeting summary based on the transcript below:\n\n${formattedTranscript}`;
 
     const summaryText = await fetchOpenRouterWithFallback(
-      settings.openRouterApiKey,
-      settings.selectedModel,
+      apiKey,
+      selectedModel,
       systemPromptToUse,
       userPrompt
     );
@@ -528,10 +544,17 @@ ${formattedTranscript.slice(0, 3000)}`;
 }
 
 // ── AI Copilot Handler ───────────────────────────────────────────────────
-async function handleAskAiCopilot(userQuestion, sendResponse) {
+async function handleAskAiCopilot(request, sendResponse) {
   try {
+    const userQuestion = typeof request === 'string' ? request : (request && request.question);
+    if (!userQuestion || !userQuestion.trim()) {
+      return sendResponse({ success: false, error: 'Please enter a valid question for AI Copilot.' });
+    }
+
     const captions = await getCaptions();
     const settings = await getStoredSettings();
+    const apiKey = (request && request.customApiKey) || settings.openRouterApiKey;
+    const selectedModel = (request && request.customModel) || settings.selectedModel;
 
     const formattedTranscript = captions.length > 0
       ? captions.map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`).join('\n')
@@ -547,8 +570,8 @@ Your objective:
     const promptMessage = `Live Meeting Transcript Context:\n${formattedTranscript}\n\nUser Question / Quick Cue:\n${userQuestion}`;
 
     const answer = await fetchOpenRouterWithFallback(
-      settings.openRouterApiKey,
-      settings.selectedModel,
+      apiKey,
+      selectedModel,
       systemInstruction,
       promptMessage
     );
@@ -561,7 +584,7 @@ Your objective:
 }
 
 // ── Auto System Prompt Generator Handler ────────────────────────────────
-async function handleGenerateAutoSystemPrompt(sendResponse) {
+async function handleGenerateAutoSystemPrompt(request, sendResponse) {
   try {
     const captions = await getCaptions();
     if (captions.length === 0) {
@@ -569,6 +592,8 @@ async function handleGenerateAutoSystemPrompt(sendResponse) {
     }
 
     const settings = await getStoredSettings();
+    const apiKey = (request && request.customApiKey) || settings.openRouterApiKey;
+    const selectedModel = (request && request.customModel) || settings.selectedModel;
 
     const formattedTranscript = captions
       .map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`)
@@ -583,8 +608,8 @@ ${formattedTranscript}
 Output ONLY the complete, ready-to-use System Prompt text. Include clear sections for Meeting Persona, Key Metrics to Track, Action Item Format, and Tone.`;
 
     const generatedPrompt = await fetchOpenRouterWithFallback(
-      settings.openRouterApiKey,
-      settings.selectedModel,
+      apiKey,
+      selectedModel,
       "You are a master AI prompt engineer.",
       promptInput
     );
